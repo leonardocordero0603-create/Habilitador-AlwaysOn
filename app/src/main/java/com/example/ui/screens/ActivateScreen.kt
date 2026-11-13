@@ -240,7 +240,7 @@ fun ActivateScreen(
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = if (status.autoServiceRunning) {
-                                        "Bloquea tu teléfono para verlo. Se cierra solo al desbloquear con huella o al tocar dos veces."
+                                        "Bloquea tu teléfono para verlo. Pulsa encendido para despertar la pantalla o toca dos veces para salir."
                                     } else {
                                         "Pulsa el botón para mostrar el reloj al apagar la pantalla."
                                     },

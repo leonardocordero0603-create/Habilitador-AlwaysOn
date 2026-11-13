@@ -1,21 +1,16 @@
 # Add project specific ProGuard rules here.
 # You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# proguardFiles setting in build.gradle.kts.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve SourceFile and line numbers for readable deobfuscated crash reports in Google Play Console.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Keep AndroidViewModel(Application) constructors instantiated via reflection by ViewModelProvider.
+-keepclassmembers class * extends androidx.lifecycle.AndroidViewModel {
+    public <init>(android.app.Application);
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Suppress R8 notes/warnings for guarded OEM reflection (Samsung One UI SystemProperties check).
+-dontnote android.os.SystemProperties
+-dontwarn android.os.SystemProperties

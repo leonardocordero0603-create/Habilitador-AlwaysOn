@@ -52,14 +52,61 @@ object AodScreenOffController {
     @Volatile
     private var lastUnlockedAtMs: Long = 0L
 
+    @Volatile
+    private var lastWokeUpFromAodAtMs: Long = 0L
+
     private var screenReceiver: BroadcastReceiver? = null
     private var prefsJob: Job? = null
     private var pendingLaunchRunnable: Runnable? = null
+    private var wakeLockRunnable: Runnable? = null
     private var cpuHoldWakeLock: PowerManager.WakeLock? = null
 
     fun notifyUnlocked() {
         lastUnlockedAtMs = System.currentTimeMillis()
         cancelPendingLaunch()
+    }
+
+    fun wakeLockScreenFromAod(context: Context) {
+        val appContext = context.applicationContext
+        lastWokeUpFromAodAtMs = System.currentTimeMillis()
+        cancelPendingLaunch()
+        cancelTriggerNotification(appContext)
+        restoreSystemBrightnessIfNeeded(appContext)
+        acquireCpuHoldWakeLock(appContext)
+
+        wakeLockRunnable?.let { mainHandler.removeCallbacks(it) }
+        val runnable = Runnable {
+            try {
+                val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                if (pm != null && !pm.isInteractive) {
+                    @Suppress("DEPRECATION")
+                    val wakeLock = pm.newWakeLock(
+                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                            PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                            PowerManager.ON_AFTER_RELEASE,
+                        "AlwaysOn:WakeToLockScreen"
+                    ).apply {
+                        setReferenceCounted(false)
+                    }
+                    try {
+                        wakeLock.acquire(1000L)
+                        mainHandler.postDelayed({
+                            try {
+                                if (wakeLock.isHeld) wakeLock.release()
+                            } catch (_: Exception) {
+                                // Ignored
+                            }
+                        }, 350L)
+                    } catch (_: Exception) {
+                        // Ignored if restricted
+                    }
+                }
+            } finally {
+                releaseCpuHoldWakeLock()
+            }
+        }
+        wakeLockRunnable = runnable
+        mainHandler.postDelayed(runnable, 90L)
     }
 
     fun start(context: Context) {
@@ -136,11 +183,16 @@ object AodScreenOffController {
     }
 
     private fun scheduleAodOnScreenOff(appContext: Context) {
-        // Avoid re-opening AOD if the user pressed Power while AOD was already visible or just unlocked
+        // Avoid re-opening AOD if the user just woke the screen from AOD or recently unlocked
         val now = System.currentTimeMillis()
-        val recentlyDismissed = now - AODDisplayActivity.lastPausedAtMs < 1500L
-        val recentlyUnlocked = now - lastUnlockedAtMs < 1200L
-        if (AODDisplayActivity.isCurrentlyVisible || recentlyDismissed || recentlyUnlocked) {
+        val recentlyDismissed = now - AODDisplayActivity.lastPausedAtMs < 750L
+        val recentlyWokeFromAod = now - lastWokeUpFromAodAtMs < 900L
+        val recentlyUnlocked = now - lastUnlockedAtMs < 1000L
+        if (AODDisplayActivity.isCurrentlyVisible ||
+            recentlyDismissed ||
+            recentlyWokeFromAod ||
+            recentlyUnlocked
+        ) {
             return
         }
 
@@ -166,8 +218,8 @@ object AodScreenOffController {
             }
         }
         pendingLaunchRunnable = runnable
-        // Wait 520ms so Samsung One UI completes its full screen-off fade and keyguard transition
-        mainHandler.postDelayed(runnable, 520L)
+        // Wait 450ms so One UI / Android finishes locking the Keyguard cleanly
+        mainHandler.postDelayed(runnable, 450L)
     }
 
     private fun launchAodOverLockScreen(appContext: Context) {

@@ -16,11 +16,12 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
-import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -86,6 +87,10 @@ class AODDisplayActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         disableSystemTransition()
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             splashScreen.setOnExitAnimationListener { splashScreenView ->
                 splashScreenView.remove()
@@ -96,26 +101,15 @@ class AODDisplayActivity : ComponentActivity() {
         observedKeyguardLocked = isKeyguardCurrentlyLocked()
         preferencesRepository = AodPreferencesRepository(applicationContext)
 
-        // Configure pure black OLED window, cutout coverage, fullscreen flags, and 1% pre-reveal brightness BEFORE any draw
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Configure pure black OLED window, cutout coverage, keep-screen-on, and 1% pre-reveal brightness BEFORE any draw
         window.setBackgroundDrawable(ColorDrawable(AndroidColor.BLACK))
         window.decorView.setBackgroundColor(AndroidColor.BLACK)
-        @Suppress("DEPRECATION")
-        window.statusBarColor = AndroidColor.BLACK
-        @Suppress("DEPRECATION")
-        window.navigationBarColor = AndroidColor.BLACK
-        @Suppress("DEPRECATION")
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_FULLSCREEN or
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        )
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val lp = window.attributes
         lp.screenBrightness = 0.01f
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
         window.attributes = lp
 
@@ -165,7 +159,6 @@ class AODDisplayActivity : ComponentActivity() {
                 AlwaysOnTheme(darkTheme = true) {
                     AodFullscreenScreen(
                         preferences = prefs,
-                        createdAtMs = createdAtMs,
                         brightnessStageReady = brightnessStageReady,
                         onProximityPowerStateChanged = { covered ->
                             applyWindowPowerState(
@@ -176,6 +169,9 @@ class AODDisplayActivity : ComponentActivity() {
                         },
                         onCheckSmartUnlock = { checkSmartKeyguardUnlock() },
                         onUnlockDismiss = { finishUnlockedSmartly() },
+                        onPowerPressedWhileAod = { pocketCovered ->
+                            handlePowerPressedWhileAod(pocketCovered)
+                        },
                         onExit = { finishCleanly() }
                     )
                 }
@@ -205,6 +201,17 @@ class AODDisplayActivity : ComponentActivity() {
         createdAtMs = System.currentTimeMillis()
         isFinishingSmartly = false
         observedKeyguardLocked = observedKeyguardLocked || isKeyguardCurrentlyLocked()
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
         disableSystemTransition()
         hideSystemBars()
     }
@@ -336,12 +343,34 @@ class AODDisplayActivity : ComponentActivity() {
         disableSystemTransition()
     }
 
+    private fun handlePowerPressedWhileAod(pocketCovered: Boolean) {
+        if (isFinishingSmartly) return
+        if (System.currentTimeMillis() - createdAtMs <= 1000L) return
+        if (pocketCovered) {
+            finishCleanly()
+            return
+        }
+        isFinishingSmartly = true
+        releaseProximityWakeLock()
+        clearLockScreenWindowFlags()
+        AodScreenOffController.wakeLockScreenFromAod(applicationContext)
+        finishAndRemoveTask()
+        disableSystemTransition()
+    }
+
     private fun finishUnlockedSmartly() {
         if (isFinishingSmartly) return
         isFinishingSmartly = true
         AodScreenOffController.notifyUnlocked()
         releaseProximityWakeLock()
+        clearLockScreenWindowFlags()
+        AodScreenOffController.restoreSystemBrightnessIfNeeded(applicationContext)
 
+        finishAndRemoveTask()
+        disableSystemTransition()
+    }
+
+    private fun clearLockScreenWindowFlags() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(false)
             setTurnScreenOn(false)
@@ -357,10 +386,6 @@ class AODDisplayActivity : ComponentActivity() {
         val updatedLp = window.attributes
         updatedLp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         window.attributes = updatedLp
-        AodScreenOffController.restoreSystemBrightnessIfNeeded(applicationContext)
-
-        finishAndRemoveTask()
-        disableSystemTransition()
     }
 
     private fun disableSystemTransition() {
@@ -378,26 +403,17 @@ class AODDisplayActivity : ComponentActivity() {
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_FULLSCREEN
-            )
     }
 }
 
 @Composable
 private fun AodFullscreenScreen(
     preferences: AodPreferences,
-    createdAtMs: Long,
     brightnessStageReady: Boolean,
     onProximityPowerStateChanged: (Boolean) -> Unit,
     onCheckSmartUnlock: () -> Boolean,
     onUnlockDismiss: () -> Unit,
+    onPowerPressedWhileAod: (Boolean) -> Unit,
     onExit: () -> Unit
 ) {
     val context = LocalContext.current
@@ -447,10 +463,8 @@ private fun AodFullscreenScreen(
                     Intent.ACTION_USER_PRESENT -> onUnlockDismiss()
                     Intent.ACTION_SCREEN_ON -> onCheckSmartUnlock()
                     Intent.ACTION_SCREEN_OFF -> {
-                        // If user presses Power while AOD is already shown, dismiss cleanly
-                        if (System.currentTimeMillis() - createdAtMs > 1200L) {
-                            onExit()
-                        }
+                        // Pressing Power while AOD is displayed wakes the normal lock screen
+                        onPowerPressedWhileAod(isPocketCovered)
                     }
                 }
             }
