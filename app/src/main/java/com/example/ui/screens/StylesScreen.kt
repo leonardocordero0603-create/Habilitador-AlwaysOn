@@ -76,6 +76,7 @@ import com.example.model.AodClockStyle
 import com.example.model.AodThemePreset
 import com.example.model.AodTransitionStyle
 import com.example.ui.AodUiState
+import com.example.ui.components.AdMobBanner
 import com.example.ui.components.PhoneMockupPreview
 import com.example.ui.theme.ElectricSapphire
 import com.example.ui.theme.IceCyan
@@ -174,23 +175,8 @@ fun StylesScreen(
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         if (!prefs.isProUnlocked) {
-                            // Non-intrusive AdMob banner placeholder for free users
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(OledSurfaceElevated)
-                                    .border(1.dp, OledOutlineSubtle, RoundedCornerShape(12.dp))
-                                    .padding(10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "Anuncio patrocinado (AdMob) — Se oculta al adquirir Pro",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
+                            // Non-intrusive AdMob banner for free users
+                            AdMobBanner()
                             Spacer(modifier = Modifier.height(12.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),

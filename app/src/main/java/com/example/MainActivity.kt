@@ -101,6 +101,11 @@ private val Destinations = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            com.google.android.gms.ads.MobileAds.initialize(this) {}
+        } catch (_: Exception) {
+            // Ignore if Google Play Services not present in mock/preview
+        }
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
