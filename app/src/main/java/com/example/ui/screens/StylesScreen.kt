@@ -24,11 +24,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RadioButtonChecked
+import androidx.compose.material.icons.filled.SwipeVertical
+import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -38,6 +44,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
@@ -46,6 +53,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +74,7 @@ import com.example.model.AodAccentColor
 import com.example.model.AodClockFont
 import com.example.model.AodClockStyle
 import com.example.model.AodThemePreset
+import com.example.model.AodTransitionStyle
 import com.example.ui.AodUiState
 import com.example.ui.components.PhoneMockupPreview
 import com.example.ui.theme.ElectricSapphire
@@ -91,6 +103,7 @@ fun StylesScreen(
     onToggleShowSeconds: (Boolean) -> Unit,
     onToggleShowNotifications: (Boolean) -> Unit,
     onToggleShowMusicControls: (Boolean) -> Unit,
+    onSelectTransitionStyle: (AodTransitionStyle) -> Unit,
     onCustomLabelChange: (String) -> Unit,
     onLaunchPreviewFullscreen: () -> Unit,
     onUnlockPro: (Boolean) -> Unit,
@@ -100,6 +113,7 @@ fun StylesScreen(
     val prefs = uiState.preferences
     val status = uiState.deviceStatus
     val oneUiShape = RoundedCornerShape(24.dp)
+    var transitionReplayTrigger by remember { mutableIntStateOf(0) }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -240,28 +254,152 @@ fun StylesScreen(
                     PhoneMockupPreview(
                         preferences = prefs,
                         batteryPercent = status.batteryPercent,
-                        isCharging = status.isCharging
+                        isCharging = status.isCharging,
+                        transitionReplayTrigger = transitionReplayTrigger
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = onLaunchPreviewFullscreen,
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = OledSurfaceElevated,
-                            contentColor = IceCyan
-                        ),
-                        border = BorderStroke(1.dp, OledOutline),
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag("preview_launch_aod_button")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Fullscreen,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Vista previa completa")
+                        OutlinedButton(
+                            onClick = { transitionReplayTrigger += 1 },
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, OledOutline),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("replay_transition_preview_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                tint = IceCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Probar transición", color = IceCyan)
+                        }
+                        Button(
+                            onClick = onLaunchPreviewFullscreen,
+                            shape = RoundedCornerShape(50),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = OledSurfaceElevated,
+                                contentColor = IceCyan
+                            ),
+                            border = BorderStroke(1.dp, OledOutline),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("preview_launch_aod_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Fullscreen,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Pantalla completa")
+                        }
+                    }
+                }
+            }
+
+            // Good Lock Transition Style Selector
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = oneUiShape,
+                    colors = CardDefaults.cardColors(containerColor = OledSurface),
+                    border = BorderStroke(1.dp, OledOutline)
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 16.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            Text(
+                                text = "Animación de entrada y salida",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Transiciones estilo Good Lock al iniciar o salir de Always On",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(AodTransitionStyle.entries) { style ->
+                                val selected = prefs.transitionStyle == style
+                                val accent = prefs.accentColor.color
+                                val icon = when (style) {
+                                    AodTransitionStyle.ONE_UI_ZOOM -> Icons.Filled.ZoomOutMap
+                                    AodTransitionStyle.WONDERLAND_HALO -> Icons.Filled.AutoAwesome
+                                    AodTransitionStyle.IRIS_PORTAL -> Icons.Filled.RadioButtonChecked
+                                    AodTransitionStyle.CURTAIN_SWEEP -> Icons.Filled.SwipeVertical
+                                    AodTransitionStyle.SOFT_FADE -> Icons.Filled.BlurOn
+                                }
+                                Card(
+                                    onClick = {
+                                        onSelectTransitionStyle(style)
+                                        transitionReplayTrigger += 1
+                                    },
+                                    shape = RoundedCornerShape(18.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (selected) accent.copy(alpha = 0.14f) else OledSurfaceElevated
+                                    ),
+                                    border = BorderStroke(
+                                        width = if (selected) 2.dp else 1.dp,
+                                        color = if (selected) accent else OledOutline
+                                    ),
+                                    modifier = Modifier
+                                        .width(126.dp)
+                                        .testTag("transition_style_${style.id}")
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        horizontalAlignment = Alignment.Start
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (selected) accent.copy(alpha = 0.22f)
+                                                    else Color.White.copy(alpha = 0.06f)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = icon,
+                                                contentDescription = null,
+                                                tint = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = style.shortTitle,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = style.subtitle,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontSize = 10.sp,
+                                            lineHeight = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

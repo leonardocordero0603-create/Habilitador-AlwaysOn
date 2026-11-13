@@ -33,7 +33,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,9 +55,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.aod.AodClockCanvas
 import com.example.aod.AodLiveStateHolder
+import com.example.aod.AodTransitionContainer
 import com.example.model.AodPreferences
 import com.example.model.DeviceCompatibilityTier
 import com.example.model.SamsungDeviceStatus
+import kotlinx.coroutines.delay
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.ElectricSapphire
@@ -335,11 +341,23 @@ fun PhoneMockupPreview(
     preferences: AodPreferences,
     batteryPercent: Int?,
     isCharging: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    transitionReplayTrigger: Int = 0
 ) {
     val previewCd = stringResource(R.string.cd_clock_preview)
     val notifications by AodLiveStateHolder.notifications.collectAsStateWithLifecycle()
     val samsungMusic by AodLiveStateHolder.samsungMusic.collectAsStateWithLifecycle()
+    var previewVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(transitionReplayTrigger) {
+        if (transitionReplayTrigger > 0) {
+            delay(40L)
+            previewVisible = false
+            delay(360L)
+            previewVisible = true
+        }
+    }
+
     Box(
         modifier = modifier
             .width(196.dp)
@@ -350,15 +368,25 @@ fun PhoneMockupPreview(
             .semantics { contentDescription = previewCd },
         contentAlignment = Alignment.Center
     ) {
-        AodClockCanvas(
-            preferences = preferences,
-            batteryPercent = batteryPercent,
-            isCharging = isCharging,
-            isPreview = true,
-            notifications = notifications,
-            samsungMusic = samsungMusic,
+        AodTransitionContainer(
+            visible = previewVisible,
+            transitionStyle = preferences.transitionStyle,
+            accentColor = preferences.accentColor.color,
+            replayTrigger = 0,
+            animateOnInitialShow = false,
+            exitDurationMs = 310,
             modifier = Modifier.fillMaxSize()
-        )
+        ) {
+            AodClockCanvas(
+                preferences = preferences,
+                batteryPercent = batteryPercent,
+                isCharging = isCharging,
+                isPreview = true,
+                notifications = notifications,
+                samsungMusic = samsungMusic,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         Box(
             modifier = Modifier

@@ -13,6 +13,7 @@ import com.example.model.AodActionResult
 import com.example.model.AodClockStyle
 import com.example.model.AodPreferences
 import com.example.model.AodThemePreset
+import com.example.model.AodTransitionStyle
 import com.example.model.SamsungDeviceStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -332,6 +333,10 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setShowMusicControls(enabled: Boolean) {
         viewModelScope.launch { prefsRepo.updateShowMusicControls(enabled) }
+    }
+
+    fun setTransitionStyle(style: AodTransitionStyle) {
+        viewModelScope.launch { prefsRepo.updateTransitionStyle(style) }
     }
 
     fun setCustomLabel(label: String) {

@@ -271,6 +271,7 @@ fun AlwaysOnApp(viewModel: AodViewModel = viewModel()) {
                             onToggleShowSeconds = viewModel::setShowSeconds,
                             onToggleShowNotifications = viewModel::setShowNotifications,
                             onToggleShowMusicControls = viewModel::setShowMusicControls,
+                            onSelectTransitionStyle = viewModel::setTransitionStyle,
                             onCustomLabelChange = viewModel::setCustomLabel,
                             onLaunchPreviewFullscreen = viewModel::launchUniversalAod,
                             onUnlockPro = viewModel::setProUnlocked,

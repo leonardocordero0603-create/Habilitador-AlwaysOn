@@ -13,6 +13,7 @@ import com.example.model.AodClockFont
 import com.example.model.AodClockStyle
 import com.example.model.AodPreferences
 import com.example.model.AodThemePreset
+import com.example.model.AodTransitionStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -38,6 +39,7 @@ class AodPreferencesRepository(private val context: Context) {
         val POCKET_MODE_ENABLED = booleanPreferencesKey("pocket_mode_enabled")
         val SHOW_NOTIFICATIONS = booleanPreferencesKey("show_notifications")
         val SHOW_MUSIC_CONTROLS = booleanPreferencesKey("show_music_controls")
+        val TRANSITION_STYLE = stringPreferencesKey("transition_style")
         val IS_PRO_UNLOCKED = booleanPreferencesKey("is_pro_unlocked")
     }
 
@@ -62,6 +64,7 @@ class AodPreferencesRepository(private val context: Context) {
             pocketModeEnabled = prefs[Keys.POCKET_MODE_ENABLED] ?: true,
             showNotifications = prefs[Keys.SHOW_NOTIFICATIONS] ?: true,
             showMusicControls = prefs[Keys.SHOW_MUSIC_CONTROLS] ?: true,
+            transitionStyle = AodTransitionStyle.fromId(prefs[Keys.TRANSITION_STYLE]),
             isProUnlocked = prefs[Keys.IS_PRO_UNLOCKED] ?: false
         )
     }
@@ -153,6 +156,10 @@ class AodPreferencesRepository(private val context: Context) {
 
     suspend fun updateShowMusicControls(enabled: Boolean) {
         context.aodDataStore.edit { it[Keys.SHOW_MUSIC_CONTROLS] = enabled }
+    }
+
+    suspend fun updateTransitionStyle(style: AodTransitionStyle) {
+        context.aodDataStore.edit { it[Keys.TRANSITION_STYLE] = style.id }
     }
 
     suspend fun updateProUnlocked(unlocked: Boolean) {

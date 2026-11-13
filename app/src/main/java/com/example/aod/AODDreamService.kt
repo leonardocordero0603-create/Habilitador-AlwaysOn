@@ -56,17 +56,24 @@ class AODDreamService : DreamService(), LifecycleOwner, SavedStateRegistryOwner 
                 val notifications by AodLiveStateHolder.notifications.collectAsStateWithLifecycle()
                 val samsungMusic by AodLiveStateHolder.samsungMusic.collectAsStateWithLifecycle()
                 AlwaysOnTheme(darkTheme = true) {
-                    AodClockCanvas(
-                        preferences = prefs,
-                        batteryPercent = batteryPercent,
-                        isCharging = isCharging,
-                        isPreview = false,
-                        notifications = notifications,
-                        samsungMusic = samsungMusic,
-                        onMusicPrevious = AodLiveStateHolder::skipToPrevious,
-                        onMusicPlayPause = AodLiveStateHolder::togglePlayPause,
-                        onMusicNext = AodLiveStateHolder::skipToNext
-                    )
+                    AodTransitionContainer(
+                        visible = true,
+                        transitionStyle = prefs.transitionStyle,
+                        accentColor = prefs.accentColor.color,
+                        animateOnInitialShow = true
+                    ) {
+                        AodClockCanvas(
+                            preferences = prefs,
+                            batteryPercent = batteryPercent,
+                            isCharging = isCharging,
+                            isPreview = false,
+                            notifications = notifications,
+                            samsungMusic = samsungMusic,
+                            onMusicPrevious = AodLiveStateHolder::skipToPrevious,
+                            onMusicPlayPause = AodLiveStateHolder::togglePlayPause,
+                            onMusicNext = AodLiveStateHolder::skipToNext
+                        )
+                    }
                 }
             }
         }

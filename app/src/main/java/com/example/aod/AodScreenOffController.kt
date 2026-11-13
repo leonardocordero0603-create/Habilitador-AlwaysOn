@@ -78,35 +78,95 @@ object AodScreenOffController {
         val runnable = Runnable {
             try {
                 val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
-                if (pm != null && !pm.isInteractive) {
-                    @Suppress("DEPRECATION")
-                    val wakeLock = pm.newWakeLock(
-                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                            PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                            PowerManager.ON_AFTER_RELEASE,
-                        "AlwaysOn:WakeToLockScreen"
-                    ).apply {
-                        setReferenceCounted(false)
+                if (pm == null || !pm.isInteractive) {
+                    // Legacy wakeLock nudge + modern setTurnScreenOn Activity handover
+                    if (pm != null) {
+                        @Suppress("DEPRECATION")
+                        val wakeLock = pm.newWakeLock(
+                            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                                PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                                PowerManager.ON_AFTER_RELEASE,
+                            "AlwaysOn:WakeToLockScreen"
+                        ).apply {
+                            setReferenceCounted(false)
+                        }
+                        try {
+                            wakeLock.acquire(800L)
+                            mainHandler.postDelayed({
+                                try {
+                                    if (wakeLock.isHeld) wakeLock.release()
+                                } catch (_: Exception) {
+                                    // Ignored
+                                }
+                            }, 350L)
+                        } catch (_: Exception) {
+                            // Ignored if restricted
+                        }
                     }
-                    try {
-                        wakeLock.acquire(1000L)
-                        mainHandler.postDelayed({
-                            try {
-                                if (wakeLock.isHeld) wakeLock.release()
-                            } catch (_: Exception) {
-                                // Ignored
-                            }
-                        }, 350L)
-                    } catch (_: Exception) {
-                        // Ignored if restricted
-                    }
+                    launchAodWakeHandover(appContext)
                 }
             } finally {
                 releaseCpuHoldWakeLock()
             }
         }
         wakeLockRunnable = runnable
-        mainHandler.postDelayed(runnable, 90L)
+        // Wait ~380ms so Android / One UI finishes its power-button goToSleep transition cleanly
+        mainHandler.postDelayed(runnable, 380L)
+    }
+
+    private fun launchAodWakeHandover(appContext: Context) {
+        val wakeIntent = Intent(appContext, AodWakeScreenActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            )
+        }
+
+        val canDirectStart = Settings.canDrawOverlays(appContext) ||
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+
+        var launchedDirectly = false
+        if (canDirectStart) {
+            try {
+                val options = ActivityOptions.makeCustomAnimation(appContext, 0, 0)
+                appContext.startActivity(wakeIntent, options.toBundle())
+                launchedDirectly = true
+            } catch (_: Exception) {
+                launchedDirectly = false
+            }
+        }
+
+        if (!launchedDirectly) {
+            val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            ensureTriggerChannel(nm)
+            val canUseFsi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                nm?.canUseFullScreenIntent() ?: true
+            } else {
+                true
+            }
+            if (canUseFsi) {
+                val fullScreenPendingIntent = PendingIntent.getActivity(
+                    appContext,
+                    TRIGGER_NOTIFICATION_ID + 1,
+                    wakeIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val wakeNotification = NotificationCompat.Builder(appContext, CHANNEL_TRIGGER_ID)
+                    .setSmallIcon(R.drawable.ic_tile_aod)
+                    .setContentTitle("Always On Display")
+                    .setContentText("Despertando pantalla")
+                    .setPriority(NotificationCompat.PRIORITY_MAX)
+                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                    .setSilent(true)
+                    .setAutoCancel(true)
+                    .setFullScreenIntent(fullScreenPendingIntent, true)
+                    .build()
+                nm?.notify(TRIGGER_NOTIFICATION_ID, wakeNotification)
+            }
+        }
     }
 
     fun start(context: Context) {
@@ -168,6 +228,8 @@ object AodScreenOffController {
         synchronized(lock) {
             isListening = false
             cancelPendingLaunch()
+            wakeLockRunnable?.let { mainHandler.removeCallbacks(it) }
+            wakeLockRunnable = null
             screenReceiver?.let {
                 try {
                     appContext.unregisterReceiver(it)
@@ -185,8 +247,8 @@ object AodScreenOffController {
     private fun scheduleAodOnScreenOff(appContext: Context) {
         // Avoid re-opening AOD if the user just woke the screen from AOD or recently unlocked
         val now = System.currentTimeMillis()
-        val recentlyDismissed = now - AODDisplayActivity.lastPausedAtMs < 750L
-        val recentlyWokeFromAod = now - lastWokeUpFromAodAtMs < 900L
+        val recentlyDismissed = now - AODDisplayActivity.lastPausedAtMs < 1100L
+        val recentlyWokeFromAod = now - lastWokeUpFromAodAtMs < 1200L
         val recentlyUnlocked = now - lastUnlockedAtMs < 1000L
         if (AODDisplayActivity.isCurrentlyVisible ||
             recentlyDismissed ||

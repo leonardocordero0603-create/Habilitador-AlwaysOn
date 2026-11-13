@@ -128,6 +128,49 @@ enum class AodAccentColor(
     }
 }
 
+enum class AodTransitionStyle(
+    val id: String,
+    val title: String,
+    val shortTitle: String,
+    val subtitle: String
+) {
+    ONE_UI_ZOOM(
+        id = "one_ui_zoom",
+        title = "One UI Elevación",
+        shortTitle = "Elevación",
+        subtitle = "Zoom y elevación suave estilo Good Lock"
+    ),
+    WONDERLAND_HALO(
+        id = "wonderland_halo",
+        title = "Halo Wonderland",
+        shortTitle = "Wonderland",
+        subtitle = "Aura radial OLED al entrar y salir"
+    ),
+    IRIS_PORTAL(
+        id = "iris_portal",
+        title = "Portal Iris",
+        shortTitle = "Iris",
+        subtitle = "Apertura y cierre circular luminoso"
+    ),
+    CURTAIN_SWEEP(
+        id = "curtain_sweep",
+        title = "Cortina Luminosa",
+        shortTitle = "Cortina",
+        subtitle = "Barrido vertical con haz de acento"
+    ),
+    SOFT_FADE(
+        id = "soft_fade",
+        title = "Desvanecimiento",
+        shortTitle = "Suave",
+        subtitle = "Fundido discreto sobre negro puro"
+    );
+
+    companion object {
+        fun fromId(id: String?): AodTransitionStyle =
+            entries.firstOrNull { it.id == id } ?: ONE_UI_ZOOM
+    }
+}
+
 enum class AodThemePreset(
     val id: String,
     val title: String,
@@ -232,6 +275,7 @@ data class AodPreferences(
     val pocketModeEnabled: Boolean = true,
     val showNotifications: Boolean = true,
     val showMusicControls: Boolean = true,
+    val transitionStyle: AodTransitionStyle = AodTransitionStyle.ONE_UI_ZOOM,
     val isProUnlocked: Boolean = false
 )
 

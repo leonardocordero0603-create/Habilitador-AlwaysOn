@@ -15,6 +15,8 @@ import android.hardware.SensorManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -23,7 +25,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -39,12 +40,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
@@ -76,13 +77,19 @@ class AODDisplayActivity : ComponentActivity() {
             private set
     }
 
+    private enum class AodExitPhase { NONE, DOUBLE_TAP, UNLOCK }
+
     private lateinit var preferencesRepository: AodPreferencesRepository
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var createdAtMs: Long = 0L
     private var proximityWakeLock: PowerManager.WakeLock? = null
     private var isResumedState: Boolean = false
     private var wantProximityScreenOff: Boolean = true
     private var observedKeyguardLocked: Boolean = false
     private var isFinishingSmartly: Boolean = false
+    private var exitPhase by mutableStateOf(AodExitPhase.NONE)
+    private var transitionGeneration by mutableIntStateOf(0)
+    private val forceFinishRunnable = Runnable { completeAnimatedExit() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         disableSystemTransition()
@@ -98,6 +105,7 @@ class AODDisplayActivity : ComponentActivity() {
         }
         createdAtMs = System.currentTimeMillis()
         isFinishingSmartly = false
+        exitPhase = AodExitPhase.NONE
         observedKeyguardLocked = isKeyguardCurrentlyLocked()
         preferencesRepository = AodPreferencesRepository(applicationContext)
 
@@ -160,6 +168,9 @@ class AODDisplayActivity : ComponentActivity() {
                     AodFullscreenScreen(
                         preferences = prefs,
                         brightnessStageReady = brightnessStageReady,
+                        isExiting = exitPhase != AodExitPhase.NONE,
+                        exitDurationMs = if (exitPhase == AodExitPhase.UNLOCK) 200 else 320,
+                        transitionGeneration = transitionGeneration,
                         onProximityPowerStateChanged = { covered ->
                             applyWindowPowerState(
                                 covered = covered,
@@ -168,11 +179,12 @@ class AODDisplayActivity : ComponentActivity() {
                             )
                         },
                         onCheckSmartUnlock = { checkSmartKeyguardUnlock() },
-                        onUnlockDismiss = { finishUnlockedSmartly() },
+                        onUnlockDismiss = { beginAnimatedExit(AodExitPhase.UNLOCK) },
                         onPowerPressedWhileAod = { pocketCovered ->
                             handlePowerPressedWhileAod(pocketCovered)
                         },
-                        onExit = { finishCleanly() }
+                        onExit = { beginAnimatedExit(AodExitPhase.DOUBLE_TAP) },
+                        onExitAnimationFinished = { completeAnimatedExit() }
                     )
                 }
             }
@@ -200,6 +212,9 @@ class AODDisplayActivity : ComponentActivity() {
         super.onNewIntent(intent)
         createdAtMs = System.currentTimeMillis()
         isFinishingSmartly = false
+        exitPhase = AodExitPhase.NONE
+        transitionGeneration += 1
+        mainHandler.removeCallbacks(forceFinishRunnable)
         observedKeyguardLocked = observedKeyguardLocked || isKeyguardCurrentlyLocked()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -236,6 +251,7 @@ class AODDisplayActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(forceFinishRunnable)
         releaseProximityWakeLock()
         AodScreenOffController.restoreSystemBrightnessIfNeeded(applicationContext)
         super.onDestroy()
@@ -254,13 +270,14 @@ class AODDisplayActivity : ComponentActivity() {
 
     private fun checkSmartKeyguardUnlock(): Boolean {
         if (isFinishingSmartly) return true
+        if (exitPhase == AodExitPhase.UNLOCK) return true
         val lockedNow = isKeyguardCurrentlyLocked()
         if (lockedNow) {
             observedKeyguardLocked = true
             return false
         }
         if (observedKeyguardLocked) {
-            finishUnlockedSmartly()
+            beginAnimatedExit(AodExitPhase.UNLOCK)
             return true
         }
         return false
@@ -334,9 +351,29 @@ class AODDisplayActivity : ComponentActivity() {
         disableSystemTransition()
     }
 
+    private fun beginAnimatedExit(phase: AodExitPhase) {
+        if (isFinishingSmartly || phase == AodExitPhase.NONE) return
+        if (exitPhase == AodExitPhase.UNLOCK) return
+        if (exitPhase == phase) return
+        exitPhase = phase
+        mainHandler.removeCallbacks(forceFinishRunnable)
+        val timeoutMs = if (phase == AodExitPhase.UNLOCK) 280L else 430L
+        mainHandler.postDelayed(forceFinishRunnable, timeoutMs)
+    }
+
+    private fun completeAnimatedExit() {
+        mainHandler.removeCallbacks(forceFinishRunnable)
+        if (exitPhase == AodExitPhase.UNLOCK) {
+            finishUnlockedSmartly()
+        } else {
+            finishCleanly()
+        }
+    }
+
     private fun finishCleanly() {
         if (isFinishingSmartly) return
         isFinishingSmartly = true
+        mainHandler.removeCallbacks(forceFinishRunnable)
         releaseProximityWakeLock()
         AodScreenOffController.restoreSystemBrightnessIfNeeded(applicationContext)
         finish()
@@ -345,7 +382,8 @@ class AODDisplayActivity : ComponentActivity() {
 
     private fun handlePowerPressedWhileAod(pocketCovered: Boolean) {
         if (isFinishingSmartly) return
-        if (System.currentTimeMillis() - createdAtMs <= 1000L) return
+        if (System.currentTimeMillis() - createdAtMs <= 400L) return
+        mainHandler.removeCallbacks(forceFinishRunnable)
         if (pocketCovered) {
             finishCleanly()
             return
@@ -361,6 +399,7 @@ class AODDisplayActivity : ComponentActivity() {
     private fun finishUnlockedSmartly() {
         if (isFinishingSmartly) return
         isFinishingSmartly = true
+        mainHandler.removeCallbacks(forceFinishRunnable)
         AodScreenOffController.notifyUnlocked()
         releaseProximityWakeLock()
         clearLockScreenWindowFlags()
@@ -410,11 +449,15 @@ class AODDisplayActivity : ComponentActivity() {
 private fun AodFullscreenScreen(
     preferences: AodPreferences,
     brightnessStageReady: Boolean,
+    isExiting: Boolean,
+    exitDurationMs: Int,
+    transitionGeneration: Int,
     onProximityPowerStateChanged: (Boolean) -> Unit,
     onCheckSmartUnlock: () -> Boolean,
     onUnlockDismiss: () -> Unit,
     onPowerPressedWhileAod: (Boolean) -> Unit,
-    onExit: () -> Unit
+    onExit: () -> Unit,
+    onExitAnimationFinished: () -> Unit
 ) {
     val context = LocalContext.current
     val notifications by AodLiveStateHolder.notifications.collectAsStateWithLifecycle()
@@ -423,7 +466,6 @@ private fun AodFullscreenScreen(
     var isCharging by remember { mutableStateOf(false) }
     var showHint by remember { mutableStateOf(true) }
     var isPocketCovered by remember { mutableStateOf(false) }
-    var revealClock by remember { mutableStateOf(false) }
 
     LaunchedEffect(isPocketCovered, brightnessStageReady, preferences.brightnessLevel) {
         onProximityPowerStateChanged(isPocketCovered)
@@ -432,18 +474,11 @@ private fun AodFullscreenScreen(
     // Watch Keyguard lock->unlock transitions (e.g., side or under-display fingerprint unlock)
     LaunchedEffect(Unit) {
         delay(40L)
-        revealClock = true
         while (true) {
             if (onCheckSmartUnlock()) break
             delay(250L)
         }
     }
-
-    val clockFadeAlpha by animateFloatAsState(
-        targetValue = if (revealClock) 1f else 0f,
-        animationSpec = tween(durationMillis = 420),
-        label = "aodSmoothFadeIn"
-    )
 
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
@@ -548,10 +583,15 @@ private fun AodFullscreenScreen(
             }
     ) {
         if (!isPocketCovered) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .alpha(clockFadeAlpha)
+            AodTransitionContainer(
+                visible = !isExiting,
+                transitionStyle = preferences.transitionStyle,
+                accentColor = preferences.accentColor.color,
+                replayTrigger = transitionGeneration,
+                animateOnInitialShow = true,
+                exitDurationMs = exitDurationMs,
+                onExitAnimationFinished = onExitAnimationFinished,
+                modifier = Modifier.fillMaxSize()
             ) {
                 AodClockCanvas(
                     preferences = preferences,
@@ -567,9 +607,9 @@ private fun AodFullscreenScreen(
             }
 
             AnimatedVisibility(
-                visible = showHint && revealClock,
+                visible = showHint && !isExiting,
                 enter = fadeIn(tween(450)),
-                exit = fadeOut(tween(450)),
+                exit = fadeOut(tween(240)),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
