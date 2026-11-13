@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Always On</string>
+    <string name="tile_aod_label">Always On</string>
+    <string name="dream_aod_label">Always On AMOLED</string>
+    <string name="notification_listener_label">Iconos y Reproductor Musical (Always On)</string>
+
+    <string name="nav_activate">Activar</string>
+    <string name="nav_styles">Estilos</string>
+    <string name="nav_compatibility">Ajustes</string>
+
+    <string name="cd_refresh_status">Actualizar diagnóstico del dispositivo</string>
+    <string name="cd_clock_preview">Vista previa interactiva de Always On Display</string>
+    <string name="cd_copy_command">Copiar comando ADB</string>
+    <string name="cd_launch_aod">Iniciar pantalla Always On</string>
+    <string name="cd_battery_icon">Indicador de batería</string>
+    <string name="cd_music_previous">Canción anterior en el reproductor</string>
+    <string name="cd_music_play_pause">Reproducir o pausar en el reproductor</string>
+    <string name="cd_music_next">Siguiente canción en el reproductor</string>
+    <string name="cd_music_expand">Expandir barra Now Bar del reproductor</string>
+    <string name="cd_music_collapse">Contraer barra Now Bar del reproductor</string>
+</resources>

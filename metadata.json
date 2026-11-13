@@ -1,0 +1,6 @@
+{
+  "name": "Always On",
+  "description": "Activa y personaliza Always On Display en teléfonos Samsung Galaxy, incluyendo modelos con One UI Core mediante modo AMOLED universal, Protector de pantalla y Tile rápido.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
