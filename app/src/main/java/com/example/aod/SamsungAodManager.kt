@@ -73,6 +73,7 @@ class SamsungAodManager(private val context: Context) {
         const val KEY_AOD_START_TIME = "aod_mode_start_time"
         const val KEY_AOD_END_TIME = "aod_mode_end_time"
         const val KEY_DOZE_ALWAYS_ON = "doze_always_on"
+        const val APP_SHARE_URL = "https://ais-pre-jrxzfwmq343cdhxug3bhs7-537917905441.us-west2.run.app"
     }
 
     fun inspectDeviceStatus(): SamsungDeviceStatus {
@@ -478,6 +479,24 @@ class SamsungAodManager(private val context: Context) {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         context.startActivity(intent)
+    }
+
+    fun shareApp() {
+        try {
+            val shareText = "¡Hola! Te recomiendo «Always On», una app excelente para tener Always On Display estilo Samsung en cualquier pantalla AMOLED con relojes personalizados, Now Bar de música y ahorro inteligente de batería. Pruébala: $APP_SHARE_URL"
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "Always On Display AMOLED")
+                putExtra(Intent.EXTRA_TEXT, shareText)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = Intent.createChooser(intent, "Compartir Always On").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+        } catch (_: Exception) {
+            // Ignored if activity context unavailable
+        }
     }
 
     fun requestAddQuickTile(onResult: (String) -> Unit) {

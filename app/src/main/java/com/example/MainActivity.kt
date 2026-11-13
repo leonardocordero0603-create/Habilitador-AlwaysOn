@@ -247,6 +247,9 @@ fun AlwaysOnApp(viewModel: AodViewModel = viewModel()) {
                             onOpenSamsungAodSettings = viewModel::openSamsungAodSettings,
                             onOpenDreamSettings = viewModel::openDreamSettings,
                             onRequestAddTile = viewModel::requestAddQuickTile,
+                            onShareApp = viewModel::shareApp,
+                            onDismissQrDialog = viewModel::dismissQrDialog,
+                            onShareAppViaSystem = viewModel::shareAppViaSystem,
                             onShowFeedback = viewModel::showFeedback
                         )
                     }

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DisplaySettings
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.ScreenLockPortrait
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
@@ -45,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,10 +85,73 @@ fun ActivateScreen(
     onOpenDreamSettings: () -> Unit,
     onRequestAddTile: () -> Unit,
     onShowFeedback: (String) -> Unit,
+    onShareApp: () -> Unit,
+    onDismissQrDialog: () -> Unit,
+    onShareAppViaSystem: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val status = uiState.deviceStatus
     val prefs = uiState.preferences
+
+    if (uiState.showQrDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = onDismissQrDialog,
+            containerColor = OledSurfaceElevated,
+            title = {
+                Text(
+                    text = "Código QR para compartir",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Column(
+                    modifier = androidx.compose.ui.Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Escanea este código con cualquier cámara para instalar Always On",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = androidx.compose.ui.Modifier.height(16.dp))
+                    Surface(
+                        color = Color.White,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = androidx.compose.ui.Modifier.size(210.dp)
+                    ) {
+                        Box(
+                            modifier = androidx.compose.ui.Modifier
+                                .fillMaxSize()
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            com.example.ui.components.QrCodeCanvas(
+                                url = com.example.aod.SamsungAodManager.APP_SHARE_URL,
+                                modifier = androidx.compose.ui.Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = onShareAppViaSystem,
+                    modifier = androidx.compose.ui.Modifier.testTag("share_system_intent_button")
+                ) {
+                    Text("Compartir por WhatsApp / Redes")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = onDismissQrDialog,
+                    modifier = androidx.compose.ui.Modifier.testTag("dismiss_qr_dialog")
+                ) {
+                    Text("Cerrar")
+                }
+            }
+        )
+    }
 
     val isActive = status.autoServiceRunning || status.isNativeAodEnabled
 
@@ -572,6 +637,18 @@ fun ActivateScreen(
                     trailingBadge = "Abrir",
                     onClick = onOpenDreamSettings,
                     tag = "open_dream_settings_button"
+                )
+            }
+
+            item {
+                ActionControlCard(
+                    title = "Compartir app por QR y Enlace",
+                    subtitle = "Muestra un código QR escaneable o comparte por WhatsApp y redes",
+                    icon = Icons.Filled.QrCode2,
+                    accentColor = IceCyan,
+                    trailingBadge = "QR y Enlace",
+                    onClick = onShareApp,
+                    tag = "share_app_button"
                 )
             }
 

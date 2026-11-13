@@ -28,7 +28,8 @@ data class AodUiState(
     val feedbackMessage: String? = null,
     val showWriteSettingsDialog: Boolean = false,
     val adbGrantCommand: String = "",
-    val adbEnableCommand: String = ""
+    val adbEnableCommand: String = "",
+    val showQrDialog: Boolean = false
 )
 
 class AodViewModel(application: Application) : AndroidViewModel(application) {
@@ -39,13 +40,15 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
     private val _deviceStatus = MutableStateFlow(aodManager.inspectDeviceStatus())
     private val _feedbackMessage = MutableStateFlow<String?>(null)
     private val _showWriteSettingsDialog = MutableStateFlow(false)
+    private val _showQrDialog = MutableStateFlow(false)
 
     val uiState: StateFlow<AodUiState> = combine(
         _deviceStatus,
         prefsRepo.preferencesFlow,
         _feedbackMessage,
-        _showWriteSettingsDialog
-    ) { status, prefs, feedback, showDialog ->
+        _showWriteSettingsDialog,
+        _showQrDialog
+    ) { status, prefs, feedback, showDialog, showQr ->
         AodUiState(
             deviceStatus = status,
             preferences = prefs,
@@ -53,7 +56,8 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
             feedbackMessage = feedback,
             showWriteSettingsDialog = showDialog,
             adbGrantCommand = aodManager.getAdbGrantCommand(),
-            adbEnableCommand = aodManager.getAdbEnableNativeAodCommand()
+            adbEnableCommand = aodManager.getAdbEnableNativeAodCommand(),
+            showQrDialog = showQr
         )
     }.stateIn(
         scope = viewModelScope,
@@ -248,6 +252,19 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
 
     fun launchUniversalAod() {
         aodManager.launchUniversalAod()
+    }
+
+    fun shareApp() {
+        _showQrDialog.value = true
+    }
+
+    fun dismissQrDialog() {
+        _showQrDialog.value = false
+    }
+
+    fun shareAppViaSystem() {
+        _showQrDialog.value = false
+        aodManager.shareApp()
     }
 
     fun showFeedback(message: String) {

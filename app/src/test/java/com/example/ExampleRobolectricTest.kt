@@ -8,7 +8,9 @@ import com.example.model.AodClockFont
 import com.example.model.AodClockStyle
 import com.example.model.AodPreferences
 import com.example.model.AodThemePreset
+import com.example.ui.components.QrCodeEncoder
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,5 +74,28 @@ class ExampleRobolectricTest {
         assertTrue(prefs.showNotifications)
         assertTrue(prefs.showMusicControls)
         assertTrue(prefs.pocketModeEnabled)
+    }
+
+    @Test
+    fun `qr encoder produces valid scannable iso matrix without crashing`() {
+        val urlMatrix = QrCodeEncoder.encode(SamsungAodManager.APP_SHARE_URL)
+        assertEquals(37, urlMatrix.size) // Version 5 for 68-byte URL at EC M
+        // Top-left finder pattern outer border & center
+        assertTrue(urlMatrix[0][0])
+        assertFalse(urlMatrix[1][1])
+        assertTrue(urlMatrix[3][3])
+        // Separator around top-left finder
+        assertFalse(urlMatrix[7][0])
+        assertFalse(urlMatrix[0][7])
+        // Dark module at (4*5 + 9, 8) = (29, 8)
+        assertTrue(urlMatrix[29][8])
+        // Timing pattern
+        assertTrue(urlMatrix[6][8])
+        assertFalse(urlMatrix[6][9])
+
+        // Edge cases must never throw
+        assertEquals(21, QrCodeEncoder.encode("").size)
+        assertEquals(21, QrCodeEncoder.encode("Always On ⭐").size)
+        assertEquals(57, QrCodeEncoder.encode("x".repeat(300)).size)
     }
 }
