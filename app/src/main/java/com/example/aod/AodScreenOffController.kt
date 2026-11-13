@@ -1,6 +1,7 @@
 package com.example.aod
 
 import android.app.ActivityOptions
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -26,8 +27,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * Shared silent screen-off detector used by both AodNotificationListenerService (zero notification,
- * persistent system binding) and AODAutoService without showing any ongoing notification.
+ * Shared silent screen-off & charging detector used by both AodNotificationListenerService
+ * (zero notification, persistent system binding) and AODAutoService without ongoing notifications.
  */
 object AodScreenOffController {
 
@@ -50,16 +51,39 @@ object AodScreenOffController {
     private var currentPrefs: AodPreferences = AodPreferences()
 
     @Volatile
+    private var cachedAutoEnabled: Boolean? = null
+
+    @Volatile
+    private var cachedOnlyCharging: Boolean? = null
+
+    @Volatile
     private var lastUnlockedAtMs: Long = 0L
 
     @Volatile
     private var lastWokeUpFromAodAtMs: Long = 0L
+
+    @Volatile
+    private var lastScreenOnAtMs: Long = 0L
+
+    @Volatile
+    private var lastScreenOffAtMs: Long = 0L
+
+    @Volatile
+    private var lastPowerConnectedAtMs: Long = 0L
+
+    @Volatile
+    private var pendingLaunchIsPowerConnect: Boolean = false
 
     private var screenReceiver: BroadcastReceiver? = null
     private var prefsJob: Job? = null
     private var pendingLaunchRunnable: Runnable? = null
     private var wakeLockRunnable: Runnable? = null
     private var cpuHoldWakeLock: PowerManager.WakeLock? = null
+
+    fun setOnlyChargingMode(enabled: Boolean) {
+        cachedOnlyCharging = enabled
+        currentPrefs = currentPrefs.copy(autoAodOnlyCharging = enabled)
+    }
 
     fun notifyUnlocked() {
         lastUnlockedAtMs = System.currentTimeMillis()
@@ -172,11 +196,19 @@ object AodScreenOffController {
     fun start(context: Context) {
         val appContext = context.applicationContext
         synchronized(lock) {
+            val repo = AodPreferencesRepository(appContext)
+            if (cachedAutoEnabled == null) {
+                cachedAutoEnabled = repo.getCachedAutoAodEnabled()
+            }
+            if (cachedOnlyCharging == null) {
+                cachedOnlyCharging = repo.getCachedAutoAodOnlyCharging()
+            }
             if (prefsJob == null) {
-                val repo = AodPreferencesRepository(appContext)
                 prefsJob = scope.launch {
                     repo.preferencesFlow.collect { prefs ->
                         currentPrefs = prefs
+                        cachedAutoEnabled = prefs.autoAodOnScreenOff
+                        cachedOnlyCharging = prefs.autoAodOnlyCharging
                     }
                 }
             }
@@ -189,9 +221,21 @@ object AodScreenOffController {
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(ctx: Context?, intent: Intent?) {
                     when (intent?.action) {
-                        Intent.ACTION_SCREEN_OFF -> scheduleAodOnScreenOff(appContext)
+                        Intent.ACTION_SCREEN_OFF -> {
+                            lastScreenOffAtMs = System.currentTimeMillis()
+                            scheduleAodOnScreenOff(appContext)
+                        }
                         Intent.ACTION_SCREEN_ON -> {
-                            cancelPendingLaunch()
+                            val now = System.currentTimeMillis()
+                            lastScreenOnAtMs = now
+                            // On Samsung / One UI, plugging a charger while screen-off briefly wakes the
+                            // locked screen to show the charging pill; don't abort a charger launch for that.
+                            val isChargerWakeWhileLocked = pendingLaunchIsPowerConnect &&
+                                (now - lastPowerConnectedAtMs < 3000L) &&
+                                isKeyguardLocked(appContext)
+                            if (!isChargerWakeWhileLocked) {
+                                cancelPendingLaunch()
+                            }
                             if (!AODDisplayActivity.isCurrentlyVisible) {
                                 restoreSystemBrightnessIfNeeded(appContext)
                             }
@@ -201,6 +245,15 @@ object AodScreenOffController {
                             restoreSystemBrightnessIfNeeded(appContext)
                             cancelTriggerNotification(appContext)
                         }
+                        Intent.ACTION_POWER_CONNECTED -> {
+                            lastPowerConnectedAtMs = System.currentTimeMillis()
+                            scheduleAodOnPowerConnected(appContext)
+                        }
+                        Intent.ACTION_POWER_DISCONNECTED -> {
+                            if (pendingLaunchIsPowerConnect) {
+                                cancelPendingLaunch()
+                            }
+                        }
                     }
                 }
             }
@@ -209,6 +262,8 @@ object AodScreenOffController {
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
+                addAction(Intent.ACTION_POWER_CONNECTED)
+                addAction(Intent.ACTION_POWER_DISCONNECTED)
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -244,6 +299,25 @@ object AodScreenOffController {
         }
     }
 
+    private fun isAutoAodEnabled(appContext: Context): Boolean {
+        return cachedAutoEnabled
+            ?: AodPreferencesRepository(appContext).getCachedAutoAodEnabled().also {
+                cachedAutoEnabled = it
+            }
+    }
+
+    private fun isOnlyChargingMode(appContext: Context): Boolean {
+        return cachedOnlyCharging
+            ?: AodPreferencesRepository(appContext).getCachedAutoAodOnlyCharging().also {
+                cachedOnlyCharging = it
+            }
+    }
+
+    private fun isKeyguardLocked(appContext: Context): Boolean {
+        val km = appContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        return km?.isKeyguardLocked == true
+    }
+
     private fun scheduleAodOnScreenOff(appContext: Context) {
         // Avoid re-opening AOD if the user just woke the screen from AOD or recently unlocked
         val now = System.currentTimeMillis()
@@ -258,11 +332,13 @@ object AodScreenOffController {
             return
         }
 
-        if (currentPrefs.autoAodOnlyCharging && !isDeviceCharging(appContext)) {
+        val onlyCharging = isOnlyChargingMode(appContext)
+        if (onlyCharging && !isDeviceCharging(appContext)) {
             return
         }
 
         cancelPendingLaunch()
+        pendingLaunchIsPowerConnect = false
         acquireCpuHoldWakeLock(appContext)
 
         val runnable = Runnable {
@@ -271,10 +347,11 @@ object AodScreenOffController {
                 if (pm?.isInteractive == true || AODDisplayActivity.isCurrentlyVisible) {
                     return@Runnable
                 }
-                if (currentPrefs.autoAodOnlyCharging && !isDeviceCharging(appContext)) {
+                val stillOnlyCharging = isOnlyChargingMode(appContext)
+                if (stillOnlyCharging && !isDeviceCharging(appContext)) {
                     return@Runnable
                 }
-                launchAodOverLockScreen(appContext)
+                launchAodOverLockScreen(appContext, startedAutoCharging = stillOnlyCharging)
             } finally {
                 releaseCpuHoldWakeLock()
             }
@@ -284,7 +361,61 @@ object AodScreenOffController {
         mainHandler.postDelayed(runnable, 450L)
     }
 
-    private fun launchAodOverLockScreen(appContext: Context) {
+    private fun scheduleAodOnPowerConnected(appContext: Context) {
+        val now = System.currentTimeMillis()
+        if (!isAutoAodEnabled(appContext) || !isOnlyChargingMode(appContext)) {
+            return
+        }
+        if (AODDisplayActivity.isCurrentlyVisible || now - lastUnlockedAtMs < 1500L) {
+            return
+        }
+
+        val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val isInteractive = pm?.isInteractive == true
+        val isLocked = isKeyguardLocked(appContext)
+        val screenOffOrJustWokeForCharger = !isInteractive ||
+            lastScreenOffAtMs >= lastScreenOnAtMs ||
+            (now - lastScreenOnAtMs < 3500L)
+
+        // Only auto-activate when screen is off or Samsung's charging indicator just woke a locked screen
+        if (isInteractive && !(isLocked && screenOffOrJustWokeForCharger)) {
+            return
+        }
+
+        cancelPendingLaunch()
+        pendingLaunchIsPowerConnect = true
+        acquireCpuHoldWakeLock(appContext)
+
+        val runnable = Runnable {
+            try {
+                if (!isAutoAodEnabled(appContext) || !isOnlyChargingMode(appContext)) {
+                    return@Runnable
+                }
+                if (AODDisplayActivity.isCurrentlyVisible || !isDeviceCharging(appContext)) {
+                    return@Runnable
+                }
+                val currentPm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                val interactiveNow = currentPm?.isInteractive == true
+                val lockedNow = isKeyguardLocked(appContext)
+                if (interactiveNow && !lockedNow) {
+                    return@Runnable
+                }
+                val canDirectStart = Settings.canDrawOverlays(appContext) ||
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                if (interactiveNow && !canDirectStart) {
+                    return@Runnable
+                }
+                launchAodOverLockScreen(appContext, startedAutoCharging = true)
+            } finally {
+                pendingLaunchIsPowerConnect = false
+                releaseCpuHoldWakeLock()
+            }
+        }
+        pendingLaunchRunnable = runnable
+        mainHandler.postDelayed(runnable, 950L)
+    }
+
+    private fun launchAodOverLockScreen(appContext: Context, startedAutoCharging: Boolean) {
         val launchIntent = Intent(appContext, AODDisplayActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -292,6 +423,7 @@ object AodScreenOffController {
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or
                     Intent.FLAG_ACTIVITY_NO_USER_ACTION
             )
+            putExtra(AODDisplayActivity.EXTRA_STARTED_AUTO_CHARGING, startedAutoCharging)
         }
 
         val canDirectStart = Settings.canDrawOverlays(appContext) ||
@@ -369,6 +501,7 @@ object AodScreenOffController {
     private fun cancelPendingLaunch() {
         pendingLaunchRunnable?.let { mainHandler.removeCallbacks(it) }
         pendingLaunchRunnable = null
+        pendingLaunchIsPowerConnect = false
         releaseCpuHoldWakeLock()
     }
 
@@ -401,10 +534,12 @@ object AodScreenOffController {
         nm?.cancel(TRIGGER_NOTIFICATION_ID)
     }
 
-    private fun isDeviceCharging(appContext: Context): Boolean {
+    fun isDeviceCharging(appContext: Context): Boolean {
         val batteryIntent = appContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-        return status == BatteryManager.BATTERY_STATUS_CHARGING ||
+        val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        return plugged > 0 ||
+            status == BatteryManager.BATTERY_STATUS_CHARGING ||
             status == BatteryManager.BATTERY_STATUS_FULL
     }
 

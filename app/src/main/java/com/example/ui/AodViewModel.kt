@@ -139,6 +139,7 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setAutoAodOnlyCharging(onlyCharging: Boolean) {
+        AodScreenOffController.setOnlyChargingMode(onlyCharging)
         viewModelScope.launch {
             prefsRepo.updateAutoAodOnlyCharging(onlyCharging)
             _feedbackMessage.value = if (onlyCharging) {

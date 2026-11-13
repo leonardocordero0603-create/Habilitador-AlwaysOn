@@ -117,4 +117,42 @@ class ExampleRobolectricTest {
         assertEquals(21, QrCodeEncoder.encode("Always On ⭐").size)
         assertEquals(57, QrCodeEncoder.encode("x".repeat(300)).size)
     }
+
+    @Test
+    fun `charging detection recognizes plugged usb even when status is not charging`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        // Remove any sticky battery broadcast
+        context.removeStickyBroadcast(android.content.Intent(android.content.Intent.ACTION_BATTERY_CHANGED))
+        assertFalse(com.example.aod.AodScreenOffController.isDeviceCharging(context))
+
+        // Samsung 80% battery protection reports plugged USB + NOT_CHARGING
+        val usbProtectedIntent = android.content.Intent(android.content.Intent.ACTION_BATTERY_CHANGED).apply {
+            putExtra(android.os.BatteryManager.EXTRA_PLUGGED, android.os.BatteryManager.BATTERY_PLUGGED_USB)
+            putExtra(android.os.BatteryManager.EXTRA_STATUS, android.os.BatteryManager.BATTERY_STATUS_NOT_CHARGING)
+        }
+        @Suppress("DEPRECATION")
+        context.sendStickyBroadcast(usbProtectedIntent)
+        assertTrue(com.example.aod.AodScreenOffController.isDeviceCharging(context))
+
+        // Unplugged discharging
+        val unpluggedIntent = android.content.Intent(android.content.Intent.ACTION_BATTERY_CHANGED).apply {
+            putExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0)
+            putExtra(android.os.BatteryManager.EXTRA_STATUS, android.os.BatteryManager.BATTERY_STATUS_DISCHARGING)
+        }
+        @Suppress("DEPRECATION")
+        context.sendStickyBroadcast(unpluggedIntent)
+        assertFalse(com.example.aod.AodScreenOffController.isDeviceCharging(context))
+    }
+
+    @Test
+    fun `charging only mode updates controller and repository cache synchronously`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = com.example.data.AodPreferencesRepository(context)
+        assertFalse(repo.getCachedAutoAodOnlyCharging())
+        kotlinx.coroutines.runBlocking {
+            repo.updateAutoAodOnlyCharging(true)
+        }
+        assertTrue(repo.getCachedAutoAodOnlyCharging())
+        com.example.aod.AodScreenOffController.setOnlyChargingMode(true)
+    }
 }

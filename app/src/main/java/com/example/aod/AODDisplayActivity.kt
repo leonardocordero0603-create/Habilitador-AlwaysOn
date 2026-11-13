@@ -68,6 +68,8 @@ import kotlinx.coroutines.delay
 class AODDisplayActivity : ComponentActivity() {
 
     companion object {
+        const val EXTRA_STARTED_AUTO_CHARGING = "com.example.aod.EXTRA_STARTED_AUTO_CHARGING"
+
         @Volatile
         var isCurrentlyVisible: Boolean = false
             private set
@@ -77,7 +79,7 @@ class AODDisplayActivity : ComponentActivity() {
             private set
     }
 
-    private enum class AodExitPhase { NONE, DOUBLE_TAP, UNLOCK }
+    private enum class AodExitPhase { NONE, DOUBLE_TAP, UNLOCK, DISCONNECT }
 
     private lateinit var preferencesRepository: AodPreferencesRepository
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -87,6 +89,7 @@ class AODDisplayActivity : ComponentActivity() {
     private var wantProximityScreenOff: Boolean = true
     private var observedKeyguardLocked: Boolean = false
     private var isFinishingSmartly: Boolean = false
+    private var startedInAutoChargingMode by mutableStateOf(false)
     private var exitPhase by mutableStateOf(AodExitPhase.NONE)
     private var transitionGeneration by mutableIntStateOf(0)
     private val forceFinishRunnable = Runnable { completeAnimatedExit() }
@@ -105,6 +108,7 @@ class AODDisplayActivity : ComponentActivity() {
         }
         createdAtMs = System.currentTimeMillis()
         isFinishingSmartly = false
+        startedInAutoChargingMode = intent?.getBooleanExtra(EXTRA_STARTED_AUTO_CHARGING, false) == true
         exitPhase = AodExitPhase.NONE
         observedKeyguardLocked = isKeyguardCurrentlyLocked()
         preferencesRepository = AodPreferencesRepository(applicationContext)
@@ -168,8 +172,13 @@ class AODDisplayActivity : ComponentActivity() {
                     AodFullscreenScreen(
                         preferences = prefs,
                         brightnessStageReady = brightnessStageReady,
+                        startedInAutoChargingMode = startedInAutoChargingMode,
                         isExiting = exitPhase != AodExitPhase.NONE,
-                        exitDurationMs = if (exitPhase == AodExitPhase.UNLOCK) 200 else 320,
+                        exitDurationMs = when (exitPhase) {
+                            AodExitPhase.UNLOCK -> 200
+                            AodExitPhase.DISCONNECT -> 260
+                            else -> 320
+                        },
                         transitionGeneration = transitionGeneration,
                         onProximityPowerStateChanged = { covered ->
                             applyWindowPowerState(
@@ -180,6 +189,7 @@ class AODDisplayActivity : ComponentActivity() {
                         },
                         onCheckSmartUnlock = { checkSmartKeyguardUnlock() },
                         onUnlockDismiss = { beginAnimatedExit(AodExitPhase.UNLOCK) },
+                        onPowerDisconnectedDismiss = { beginAnimatedExit(AodExitPhase.DISCONNECT) },
                         onPowerPressedWhileAod = { pocketCovered ->
                             handlePowerPressedWhileAod(pocketCovered)
                         },
@@ -212,6 +222,7 @@ class AODDisplayActivity : ComponentActivity() {
         super.onNewIntent(intent)
         createdAtMs = System.currentTimeMillis()
         isFinishingSmartly = false
+        startedInAutoChargingMode = intent.getBooleanExtra(EXTRA_STARTED_AUTO_CHARGING, false)
         exitPhase = AodExitPhase.NONE
         transitionGeneration += 1
         mainHandler.removeCallbacks(forceFinishRunnable)
@@ -357,17 +368,32 @@ class AODDisplayActivity : ComponentActivity() {
         if (exitPhase == phase) return
         exitPhase = phase
         mainHandler.removeCallbacks(forceFinishRunnable)
-        val timeoutMs = if (phase == AodExitPhase.UNLOCK) 280L else 430L
+        val timeoutMs = when (phase) {
+            AodExitPhase.UNLOCK -> 280L
+            AodExitPhase.DISCONNECT -> 360L
+            else -> 430L
+        }
         mainHandler.postDelayed(forceFinishRunnable, timeoutMs)
     }
 
     private fun completeAnimatedExit() {
         mainHandler.removeCallbacks(forceFinishRunnable)
-        if (exitPhase == AodExitPhase.UNLOCK) {
-            finishUnlockedSmartly()
-        } else {
-            finishCleanly()
+        when (exitPhase) {
+            AodExitPhase.UNLOCK -> finishUnlockedSmartly()
+            AodExitPhase.DISCONNECT -> finishDismissedOnDisconnect()
+            else -> finishCleanly()
         }
+    }
+
+    private fun finishDismissedOnDisconnect() {
+        if (isFinishingSmartly) return
+        isFinishingSmartly = true
+        mainHandler.removeCallbacks(forceFinishRunnable)
+        releaseProximityWakeLock()
+        clearLockScreenWindowFlags()
+        AodScreenOffController.restoreSystemBrightnessIfNeeded(applicationContext)
+        finishAndRemoveTask()
+        disableSystemTransition()
     }
 
     private fun finishCleanly() {
@@ -449,12 +475,14 @@ class AODDisplayActivity : ComponentActivity() {
 private fun AodFullscreenScreen(
     preferences: AodPreferences,
     brightnessStageReady: Boolean,
+    startedInAutoChargingMode: Boolean,
     isExiting: Boolean,
     exitDurationMs: Int,
     transitionGeneration: Int,
     onProximityPowerStateChanged: (Boolean) -> Unit,
     onCheckSmartUnlock: () -> Boolean,
     onUnlockDismiss: () -> Unit,
+    onPowerDisconnectedDismiss: () -> Unit,
     onPowerPressedWhileAod: (Boolean) -> Unit,
     onExit: () -> Unit,
     onExitAnimationFinished: () -> Unit
@@ -464,8 +492,12 @@ private fun AodFullscreenScreen(
     val samsungMusic by AodLiveStateHolder.samsungMusic.collectAsStateWithLifecycle()
     var batteryPercent by remember { mutableStateOf<Int?>(null) }
     var isCharging by remember { mutableStateOf(false) }
+    var wasChargingDuringSession by remember { mutableStateOf(false) }
     var showHint by remember { mutableStateOf(true) }
     var isPocketCovered by remember { mutableStateOf(false) }
+    val latestOnlyCharging by androidx.compose.runtime.rememberUpdatedState(preferences.autoAodOnlyCharging)
+    val latestAutoAodEnabled by androidx.compose.runtime.rememberUpdatedState(preferences.autoAodOnScreenOff)
+    val latestStartedAutoCharging by androidx.compose.runtime.rememberUpdatedState(startedInAutoChargingMode)
 
     LaunchedEffect(isPocketCovered, brightnessStageReady, preferences.brightnessLevel) {
         onProximityPowerStateChanged(isPocketCovered)
@@ -489,11 +521,30 @@ private fun AodFullscreenScreen(
                         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
                         val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
                         val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                        val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
                         if (level >= 0 && scale > 0) {
                             batteryPercent = ((level * 100f) / scale).toInt().coerceIn(0, 100)
                         }
-                        isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                        val nowCharging = plugged > 0 ||
+                            status == BatteryManager.BATTERY_STATUS_CHARGING ||
                             status == BatteryManager.BATTERY_STATUS_FULL
+                        isCharging = nowCharging
+                        if (nowCharging) {
+                            wasChargingDuringSession = true
+                        } else if (wasChargingDuringSession &&
+                            latestOnlyCharging &&
+                            (latestStartedAutoCharging || latestAutoAodEnabled)
+                        ) {
+                            onPowerDisconnectedDismiss()
+                        }
+                    }
+                    Intent.ACTION_POWER_DISCONNECTED -> {
+                        isCharging = false
+                        if (latestOnlyCharging &&
+                            (latestStartedAutoCharging || (latestAutoAodEnabled && wasChargingDuringSession))
+                        ) {
+                            onPowerDisconnectedDismiss()
+                        }
                     }
                     Intent.ACTION_USER_PRESENT -> onUnlockDismiss()
                     Intent.ACTION_SCREEN_ON -> onCheckSmartUnlock()
@@ -506,6 +557,7 @@ private fun AodFullscreenScreen(
         }
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction(Intent.ACTION_USER_PRESENT)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)

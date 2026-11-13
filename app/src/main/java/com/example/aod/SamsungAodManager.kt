@@ -579,6 +579,7 @@ class SamsungAodManager(private val context: Context) {
         val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
         val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
 
         val percent: Int? = if (level >= 0 && scale > 0) {
             ((level * 100f) / scale).toInt().coerceIn(0, 100)
@@ -588,7 +589,8 @@ class SamsungAodManager(private val context: Context) {
             if (prop in 0..100) prop else null
         }
 
-        val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+        val charging = plugged > 0 ||
+            status == BatteryManager.BATTERY_STATUS_CHARGING ||
             status == BatteryManager.BATTERY_STATUS_FULL
 
         return percent to charging

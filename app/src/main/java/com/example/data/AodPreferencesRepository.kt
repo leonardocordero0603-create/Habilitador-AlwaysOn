@@ -46,21 +46,34 @@ class AodPreferencesRepository(private val context: Context) {
     private val quickCache = context.getSharedPreferences("aod_quick_cache", Context.MODE_PRIVATE)
 
     val preferencesFlow: Flow<AodPreferences> = context.aodDataStore.data.map { prefs ->
+        val autoEnabled = prefs[Keys.AUTO_AOD_ON_SCREEN_OFF] ?: false
+        val onlyCharging = prefs[Keys.AUTO_AOD_ONLY_CHARGING] ?: false
+        val brightness = (prefs[Keys.BRIGHTNESS_LEVEL] ?: 0.14f).coerceIn(0.03f, 0.45f)
+        if (quickCache.getBoolean("auto_aod_on_screen_off", false) != autoEnabled ||
+            quickCache.getBoolean("auto_aod_only_charging", false) != onlyCharging ||
+            quickCache.getFloat("brightness_level", 0.14f) != brightness
+        ) {
+            quickCache.edit()
+                .putBoolean("auto_aod_on_screen_off", autoEnabled)
+                .putBoolean("auto_aod_only_charging", onlyCharging)
+                .putFloat("brightness_level", brightness)
+                .apply()
+        }
         AodPreferences(
             clockStyle = AodClockStyle.fromId(prefs[Keys.CLOCK_STYLE]),
             clockFont = AodClockFont.fromId(prefs[Keys.CLOCK_FONT]),
             accentColor = AodAccentColor.fromId(prefs[Keys.ACCENT_COLOR]),
             clockScale = (prefs[Keys.CLOCK_SCALE] ?: 1.0f).coerceIn(0.80f, 1.22f),
             alignLeft = prefs[Keys.ALIGN_LEFT] ?: false,
-            brightnessLevel = (prefs[Keys.BRIGHTNESS_LEVEL] ?: 0.14f).coerceIn(0.03f, 0.45f),
+            brightnessLevel = brightness,
             burnInProtection = prefs[Keys.BURN_IN_PROTECTION] ?: true,
             use24HourFormat = prefs[Keys.USE_24_HOUR_FORMAT] ?: true,
             showBattery = prefs[Keys.SHOW_BATTERY] ?: true,
             showDate = prefs[Keys.SHOW_DATE] ?: true,
             showSeconds = prefs[Keys.SHOW_SECONDS] ?: false,
             customLabel = prefs[Keys.CUSTOM_LABEL] ?: "",
-            autoAodOnScreenOff = prefs[Keys.AUTO_AOD_ON_SCREEN_OFF] ?: false,
-            autoAodOnlyCharging = prefs[Keys.AUTO_AOD_ONLY_CHARGING] ?: false,
+            autoAodOnScreenOff = autoEnabled,
+            autoAodOnlyCharging = onlyCharging,
             pocketModeEnabled = prefs[Keys.POCKET_MODE_ENABLED] ?: true,
             showNotifications = prefs[Keys.SHOW_NOTIFICATIONS] ?: true,
             showMusicControls = prefs[Keys.SHOW_MUSIC_CONTROLS] ?: true,
@@ -74,6 +87,9 @@ class AodPreferencesRepository(private val context: Context) {
 
     fun getCachedAutoAodEnabled(): Boolean =
         quickCache.getBoolean("auto_aod_on_screen_off", false)
+
+    fun getCachedAutoAodOnlyCharging(): Boolean =
+        quickCache.getBoolean("auto_aod_only_charging", false)
 
     suspend fun updateClockStyle(style: AodClockStyle) {
         context.aodDataStore.edit { it[Keys.CLOCK_STYLE] = style.id }
@@ -143,6 +159,7 @@ class AodPreferencesRepository(private val context: Context) {
     }
 
     suspend fun updateAutoAodOnlyCharging(enabled: Boolean) {
+        quickCache.edit().putBoolean("auto_aod_only_charging", enabled).apply()
         context.aodDataStore.edit { it[Keys.AUTO_AOD_ONLY_CHARGING] = enabled }
     }
 
