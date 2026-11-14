@@ -134,8 +134,8 @@ object AodScreenOffController {
             }
         }
         wakeLockRunnable = runnable
-        // Wait ~80ms so Android / One UI finishes its power-button goToSleep transition cleanly
-        mainHandler.postDelayed(runnable, 80L)
+        // Wait ~380ms so Android / One UI finishes its power-button goToSleep transition cleanly
+        mainHandler.postDelayed(runnable, 380L)
     }
 
     private fun launchAodWakeHandover(appContext: Context) {
@@ -335,6 +335,9 @@ object AodScreenOffController {
     }
 
     private fun scheduleAodOnScreenOff(appContext: Context) {
+        if (!isAutoAodEnabled(appContext)) {
+            return
+        }
         // Avoid re-opening AOD if the user just woke the screen from AOD or recently unlocked
         val now = System.currentTimeMillis()
         val recentlyDismissed = now - AODDisplayActivity.lastPausedAtMs < 1100L

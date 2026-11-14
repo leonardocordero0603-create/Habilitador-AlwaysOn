@@ -32,17 +32,21 @@ class AODAutoService : Service() {
         super.onCreate()
         try {
             isRunning = true
-            AodScreenOffController.start(applicationContext)
-
-            serviceScope.launch {
-                try {
-                    SamsungAodManager(applicationContext).applyMaximumPerformanceOptimizations(
-                        enableAod = true,
-                        tapToShow = false
-                    )
-                } catch (_: Throwable) {
-                    // Safe fallback
+            val autoEnabled = AodPreferencesRepository(applicationContext).getCachedAutoAodEnabled()
+            if (autoEnabled) {
+                AodScreenOffController.start(applicationContext)
+                serviceScope.launch {
+                    try {
+                        SamsungAodManager(applicationContext).applyMaximumPerformanceOptimizations(
+                            enableAod = true,
+                            tapToShow = false
+                        )
+                    } catch (_: Throwable) {
+                        // Safe fallback
+                    }
                 }
+            } else {
+                AodScreenOffController.stop(applicationContext)
             }
         } catch (_: Throwable) {
             // Safe fallback
@@ -65,7 +69,12 @@ class AODAutoService : Service() {
             }
 
             isRunning = true
-            AodScreenOffController.start(applicationContext)
+            val autoEnabled = AodPreferencesRepository(applicationContext).getCachedAutoAodEnabled()
+            if (autoEnabled) {
+                AodScreenOffController.start(applicationContext)
+            } else {
+                AodScreenOffController.stop(applicationContext)
+            }
         } catch (_: Throwable) {
             // Safe fallback
         }

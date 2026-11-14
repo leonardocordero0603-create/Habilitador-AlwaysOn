@@ -97,6 +97,10 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
                                     aodManager.startAutoAodService()
                                 }
                                 refreshStatus()
+                            } else {
+                                aodManager.stopAutoAodService()
+                                AodScreenOffController.stop(getApplication())
+                                refreshStatus()
                             }
                         } catch (_: Throwable) {
                             // Safe fallback
@@ -173,6 +177,7 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     prefsRepo.updateAutoAodOnScreenOff(false)
                     aodManager.stopAutoAodService()
+                    AodScreenOffController.stop(getApplication())
                     _feedbackMessage.value = "Always On automático desactivado."
                 }
                 refreshStatus()
