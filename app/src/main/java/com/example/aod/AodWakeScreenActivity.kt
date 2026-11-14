@@ -7,17 +7,26 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.View
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 
 /**
  * Short-lived lock-screen wake handover Activity used when the user presses the physical
- * Power button while Always On Display is active. Using Activity.setTurnScreenOn(true)
- * reliably wakes the hardware display across Android 8.1–16 and Samsung One UI, then exits
- * cleanly to reveal the user's normal lock screen.
+ * Power button while Always On Display is active. Implements a smooth 300ms fade-in animation
+ * to make turning on the phone feel natural and polished.
  */
 class AodWakeScreenActivity : ComponentActivity() {
 
@@ -49,23 +58,33 @@ class AodWakeScreenActivity : ComponentActivity() {
             // Safe fallback
         }
 
-        val blackView = View(this).apply {
-            setBackgroundColor(AndroidColor.BLACK)
+        setContent {
+            val alphaAnim = remember { Animatable(0f) }
+            LaunchedEffect(Unit) {
+                alphaAnim.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 1f - alphaAnim.value))
+            )
         }
-        setContentView(blackView)
 
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         nm?.cancel(AodScreenOffController.TRIGGER_NOTIFICATION_ID)
 
-        // Fallback finish in case focus callback is delayed on an OEM lock screen
-        handler.postDelayed(finishRunnable, 480L)
+        // Finish after 350ms (slightly after the 300ms fade-in completes)
+        handler.postDelayed(finishRunnable, 350L)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && !finished) {
             handler.removeCallbacks(finishRunnable)
-            handler.postDelayed(finishRunnable, 90L)
+            handler.postDelayed(finishRunnable, 350L)
         }
     }
 

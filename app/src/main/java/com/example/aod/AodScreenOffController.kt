@@ -134,8 +134,8 @@ object AodScreenOffController {
             }
         }
         wakeLockRunnable = runnable
-        // Wait ~380ms so Android / One UI finishes its power-button goToSleep transition cleanly
-        mainHandler.postDelayed(runnable, 380L)
+        // Wait ~80ms so Android / One UI finishes its power-button goToSleep transition cleanly
+        mainHandler.postDelayed(runnable, 80L)
     }
 
     private fun launchAodWakeHandover(appContext: Context) {
