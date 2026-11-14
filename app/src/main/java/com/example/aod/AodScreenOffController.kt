@@ -376,8 +376,8 @@ object AodScreenOffController {
             }
         }
         pendingLaunchRunnable = runnable
-        // Wait 450ms so One UI / Android finishes locking the Keyguard cleanly
-        mainHandler.postDelayed(runnable, 450L)
+        // Wait 850ms so One UI / Android finishes locking the Keyguard and turning off the screen cleanly first
+        mainHandler.postDelayed(runnable, 850L)
     }
 
     private fun scheduleAodOnPowerConnected(appContext: Context) {
