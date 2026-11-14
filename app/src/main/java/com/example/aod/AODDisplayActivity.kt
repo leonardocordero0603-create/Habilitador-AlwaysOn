@@ -79,7 +79,7 @@ class AODDisplayActivity : ComponentActivity() {
             private set
     }
 
-    private enum class AodExitPhase { NONE, DOUBLE_TAP, UNLOCK, DISCONNECT }
+    private enum class AodExitPhase { NONE, DOUBLE_TAP, UNLOCK, DISCONNECT, POWER_PRESS }
 
     private lateinit var preferencesRepository: AodPreferencesRepository
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -193,6 +193,7 @@ class AODDisplayActivity : ComponentActivity() {
                         exitDurationMs = when (exitPhase) {
                             AodExitPhase.UNLOCK -> 200
                             AodExitPhase.DISCONNECT -> 260
+                            AodExitPhase.POWER_PRESS -> 320
                             else -> 320
                         },
                         transitionGeneration = transitionGeneration,
@@ -400,9 +401,17 @@ class AODDisplayActivity : ComponentActivity() {
         if (exitPhase == phase) return
         exitPhase = phase
         mainHandler.removeCallbacks(forceFinishRunnable)
+
+        if (phase == AodExitPhase.POWER_PRESS) {
+            releaseProximityWakeLock()
+            clearLockScreenWindowFlags()
+            AodScreenOffController.wakeLockScreenFromAod(applicationContext)
+        }
+
         val timeoutMs = when (phase) {
             AodExitPhase.UNLOCK -> 280L
             AodExitPhase.DISCONNECT -> 360L
+            AodExitPhase.POWER_PRESS -> 400L
             else -> 430L
         }
         mainHandler.postDelayed(forceFinishRunnable, timeoutMs)
@@ -413,6 +422,7 @@ class AODDisplayActivity : ComponentActivity() {
         when (exitPhase) {
             AodExitPhase.UNLOCK -> finishUnlockedSmartly()
             AodExitPhase.DISCONNECT -> finishDismissedOnDisconnect()
+            AodExitPhase.POWER_PRESS -> finishCleanly()
             else -> finishCleanly()
         }
     }
@@ -439,19 +449,13 @@ class AODDisplayActivity : ComponentActivity() {
     }
 
     private fun handlePowerPressedWhileAod(pocketCovered: Boolean) {
-        if (isFinishingSmartly) return
+        if (isFinishingSmartly || exitPhase != AodExitPhase.NONE) return
         if (System.currentTimeMillis() - createdAtMs <= 400L) return
-        mainHandler.removeCallbacks(forceFinishRunnable)
         if (pocketCovered) {
             finishCleanly()
             return
         }
-        isFinishingSmartly = true
-        releaseProximityWakeLock()
-        clearLockScreenWindowFlags()
-        AodScreenOffController.wakeLockScreenFromAod(applicationContext)
-        finishAndRemoveTask()
-        disableSystemTransition()
+        beginAnimatedExit(AodExitPhase.POWER_PRESS)
     }
 
     private fun finishUnlockedSmartly() {
