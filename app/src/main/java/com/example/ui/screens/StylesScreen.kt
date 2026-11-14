@@ -76,7 +76,6 @@ import com.example.model.AodClockStyle
 import com.example.model.AodThemePreset
 import com.example.model.AodTransitionStyle
 import com.example.ui.AodUiState
-import com.example.ui.components.AdMobBanner
 import com.example.ui.components.PhoneMockupPreview
 import com.example.ui.theme.ElectricSapphire
 import com.example.ui.theme.IceCyan
@@ -107,8 +106,6 @@ fun StylesScreen(
     onSelectTransitionStyle: (AodTransitionStyle) -> Unit,
     onCustomLabelChange: (String) -> Unit,
     onLaunchPreviewFullscreen: () -> Unit,
-    onUnlockPro: (Boolean) -> Unit,
-    onRestorePurchases: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val prefs = uiState.preferences
@@ -143,93 +140,6 @@ fun StylesScreen(
                 }
             }
 
-            // Monetization & Pro Upgrade / Ad Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = oneUiShape,
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (prefs.isProUnlocked) OledSurfaceElevated else ElectricSapphire.copy(alpha = 0.12f)
-                    ),
-                    border = BorderStroke(1.dp, if (prefs.isProUnlocked) IceCyan else ElectricSapphire.copy(alpha = 0.5f))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (prefs.isProUnlocked) "✨ Versión Pro Activada" else "⭐ Always On Pro & Sin Anuncios",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = if (prefs.isProUnlocked) IceCyan else MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = if (prefs.isProUnlocked) "Disfrutas de estilos ilimitados y 0 anuncios." else "Desbloquea estilos avanzados y elimina todos los anuncios para siempre.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        if (!prefs.isProUnlocked) {
-                            // Non-intrusive AdMob banner for free users
-                            AdMobBanner()
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Button(
-                                    onClick = { onUnlockPro(true) },
-                                    shape = RoundedCornerShape(50),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = IceCyan,
-                                        contentColor = Color(0xFF041322)
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("unlock_pro_button")
-                                ) {
-                                    Text("Desbloquear Pro ($2.99)", fontWeight = FontWeight.Bold)
-                                }
-                                Button(
-                                    onClick = onRestorePurchases,
-                                    shape = RoundedCornerShape(50),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = OledSurfaceElevated,
-                                        contentColor = IceCyan
-                                    ),
-                                    border = BorderStroke(1.dp, OledOutline),
-                                    modifier = Modifier
-                                        .heightIn(min = 48.dp)
-                                        .testTag("restore_purchases_button")
-                                ) {
-                                    Text("Restaurar")
-                                }
-                            }
-                        } else {
-                            Button(
-                                onClick = { onUnlockPro(false) },
-                                shape = RoundedCornerShape(50),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = OledSurfaceElevated,
-                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                ),
-                                border = BorderStroke(1.dp, OledOutline),
-                                modifier = Modifier
-                                    .heightIn(min = 48.dp)
-                                    .testTag("reset_pro_button")
-                            ) {
-                                Text("Restablecer modo gratuito (Prueba)")
-                            }
-                        }
-                    }
-                }
-            }
 
             // Live Galaxy S23 Mockup Preview
             item {
