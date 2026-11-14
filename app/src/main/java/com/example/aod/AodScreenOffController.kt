@@ -148,17 +148,21 @@ object AodScreenOffController {
             )
         }
 
-        val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        ensureTriggerChannel(nm)
-        val canUseFsi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            nm?.canUseFullScreenIntent() ?: true
-        } else {
-            true
+        var launched = false
+        if (Settings.canDrawOverlays(appContext) || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            try {
+                val options = ActivityOptions.makeCustomAnimation(appContext, 0, 0)
+                appContext.startActivity(wakeIntent, options.toBundle())
+                launched = true
+            } catch (_: Exception) {
+                launched = false
+            }
         }
 
-        var launched = false
-        if (canUseFsi) {
+        if (!launched) {
             try {
+                val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                ensureTriggerChannel(nm)
                 val fullScreenPendingIntent = PendingIntent.getActivity(
                     appContext,
                     TRIGGER_NOTIFICATION_ID + 1,
@@ -177,17 +181,7 @@ object AodScreenOffController {
                     .setFullScreenIntent(fullScreenPendingIntent, true)
                     .build()
                 nm?.notify(TRIGGER_NOTIFICATION_ID + 1, wakeNotification)
-                launched = true
             } catch (_: Throwable) {
-                launched = false
-            }
-        }
-
-        if (!launched) {
-            try {
-                val options = ActivityOptions.makeCustomAnimation(appContext, 0, 0)
-                appContext.startActivity(wakeIntent, options.toBundle())
-            } catch (_: Exception) {
                 // Safe fallback
             }
         }
@@ -441,19 +435,25 @@ object AodScreenOffController {
             putExtra(AODDisplayActivity.EXTRA_STARTED_AUTO_CHARGING, startedAutoCharging)
         }
 
-        val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        nm?.cancel(TRIGGER_NOTIFICATION_ID)
-        ensureTriggerChannel(nm)
-
-        val canUseFsi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            nm?.canUseFullScreenIntent() ?: true
-        } else {
-            true
+        var launched = false
+        if (Settings.canDrawOverlays(appContext) || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            try {
+                dimSystemBrightnessBeforeWake(appContext)
+                val options = ActivityOptions.makeCustomAnimation(appContext, 0, 0)
+                appContext.startActivity(launchIntent, options.toBundle())
+                launched = true
+            } catch (_: Exception) {
+                restoreSystemBrightnessIfNeeded(appContext)
+                launched = false
+            }
         }
 
-        var launched = false
-        if (canUseFsi) {
+        if (!launched) {
             try {
+                val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                nm?.cancel(TRIGGER_NOTIFICATION_ID)
+                ensureTriggerChannel(nm)
+
                 val fullScreenPendingIntent = PendingIntent.getActivity(
                     appContext,
                     TRIGGER_NOTIFICATION_ID,
@@ -474,23 +474,8 @@ object AodScreenOffController {
                     .build()
 
                 nm?.notify(TRIGGER_NOTIFICATION_ID, triggerNotification)
-                launched = true
             } catch (_: Throwable) {
-                launched = false
-            }
-        }
-
-        if (!launched) {
-            val canDirectStart = Settings.canDrawOverlays(appContext) ||
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
-            if (canDirectStart) {
-                try {
-                    dimSystemBrightnessBeforeWake(appContext)
-                    val options = ActivityOptions.makeCustomAnimation(appContext, 0, 0)
-                    appContext.startActivity(launchIntent, options.toBundle())
-                } catch (_: Exception) {
-                    restoreSystemBrightnessIfNeeded(appContext)
-                }
+                // Safe fallback
             }
         }
     }
