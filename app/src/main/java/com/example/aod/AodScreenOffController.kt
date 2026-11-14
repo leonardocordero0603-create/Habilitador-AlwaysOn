@@ -421,7 +421,7 @@ object AodScreenOffController {
             }
         }
         pendingLaunchRunnable = runnable
-        mainHandler.postDelayed(runnable, 950L)
+        mainHandler.postDelayed(runnable, 4800L)
     }
 
     private fun launchAodOverLockScreen(appContext: Context, startedAutoCharging: Boolean) {
