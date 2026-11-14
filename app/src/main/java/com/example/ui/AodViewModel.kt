@@ -81,7 +81,6 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     init {
-        refreshStatus()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 prefsRepo.preferencesFlow
@@ -118,8 +117,15 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
                     AodLiveStateHolder.refreshMediaSessions(getApplication())
                 }
                 if (current.autoServiceRunning || uiState.value.preferences.autoAodOnScreenOff) {
-                    aodManager.applyMaximumPerformanceOptimizations(enableAod = true, tapToShow = false)
-                    _deviceStatus.value = aodManager.inspectDeviceStatus()
+                    val changed = aodManager.applyMaximumPerformanceOptimizations(
+                        enableAod = true,
+                        tapToShow = false
+                    )
+                    _deviceStatus.value = if (changed) {
+                        aodManager.inspectDeviceStatus()
+                    } else {
+                        current
+                    }
                 } else {
                     _deviceStatus.value = current
                 }

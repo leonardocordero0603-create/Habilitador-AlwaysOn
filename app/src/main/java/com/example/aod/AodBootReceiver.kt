@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 class AodBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -21,8 +22,9 @@ class AodBootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val repo = AodPreferencesRepository(appContext)
-                val prefs = repo.preferencesFlow.first()
-                if (prefs.autoAodOnScreenOff) {
+                val prefs = withTimeoutOrNull(3500L) { repo.preferencesFlow.first() }
+                val autoEnabled = prefs?.autoAodOnScreenOff ?: repo.getCachedAutoAodEnabled()
+                if (autoEnabled) {
                     val manager = SamsungAodManager(appContext)
                     manager.applyMaximumPerformanceOptimizations(
                         enableAod = true,
@@ -33,7 +35,11 @@ class AodBootReceiver : BroadcastReceiver() {
             } catch (_: Throwable) {
                 // Safely ignore on OEMs restricting background FGS boot start until next app open
             } finally {
-                pendingResult.finish()
+                try {
+                    pendingResult?.finish()
+                } catch (_: Throwable) {
+                    // Safe fallback
+                }
             }
         }
     }

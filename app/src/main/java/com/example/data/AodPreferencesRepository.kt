@@ -15,8 +15,10 @@ import com.example.model.AodPreferences
 import com.example.model.AodThemePreset
 import com.example.model.AodTransitionStyle
 import androidx.datastore.preferences.core.emptyPreferences
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 
@@ -102,7 +104,7 @@ class AodPreferencesRepository(private val context: Context) {
             transitionStyle = AodTransitionStyle.fromId(prefs[Keys.TRANSITION_STYLE]),
             isProUnlocked = prefs[Keys.IS_PRO_UNLOCKED] ?: false
         )
-    }
+    }.flowOn(Dispatchers.IO)
 
     fun getCachedBrightness(): Float = runCatching {
         quickCache?.getFloat("brightness_level", 0.14f)

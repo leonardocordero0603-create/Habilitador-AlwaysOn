@@ -539,10 +539,14 @@ class SamsungAodManager(private val context: Context) {
     }
 
     fun launchUniversalAod() {
-        val intent = Intent(context, AODDisplayActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        try {
+            val intent = Intent(context, AODDisplayActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            context.startActivity(intent)
+        } catch (_: Throwable) {
+            // Safe fallback
         }
-        context.startActivity(intent)
     }
 
     fun shareApp() {

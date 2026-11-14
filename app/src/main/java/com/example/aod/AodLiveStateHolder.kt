@@ -56,6 +56,7 @@ object AodLiveStateHolder {
     )
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val mediaLock = Any()
 
     private val _notifications = MutableStateFlow(AodNotificationsSnapshot())
     val notifications: StateFlow<AodNotificationsSnapshot> = _notifications.asStateFlow()
@@ -90,36 +91,40 @@ object AodLiveStateHolder {
         try {
             val manager = appContext.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
                 ?: return
-            stopMediaMonitoring()
-            sessionManager = manager
-            val listener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-                handleActiveSessions(controllers)
+            synchronized(mediaLock) {
+                stopMediaMonitoring()
+                sessionManager = manager
+                val listener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
+                    handleActiveSessions(controllers)
+                }
+                activeSessionsListener = listener
+                manager.addOnActiveSessionsChangedListener(listener, component, mainHandler)
             }
-            activeSessionsListener = listener
-            manager.addOnActiveSessionsChangedListener(listener, component, mainHandler)
             handleActiveSessions(manager.getActiveSessions(component))
         } catch (_: SecurityException) {
             // Notification listener permission not yet granted
             detachCurrentController()
             _samsungMusic.value = null
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             // Ignore transient binder errors
         }
     }
 
     fun stopMediaMonitoring() {
-        val listener = activeSessionsListener
-        val manager = sessionManager
-        if (listener != null && manager != null) {
-            try {
-                manager.removeOnActiveSessionsChangedListener(listener)
-            } catch (_: Exception) {
-                // Ignored
+        synchronized(mediaLock) {
+            val listener = activeSessionsListener
+            val manager = sessionManager
+            if (listener != null && manager != null) {
+                try {
+                    manager.removeOnActiveSessionsChangedListener(listener)
+                } catch (_: Throwable) {
+                    // Ignored
+                }
             }
+            activeSessionsListener = null
+            sessionManager = null
+            detachCurrentController()
         }
-        activeSessionsListener = null
-        sessionManager = null
-        detachCurrentController()
     }
 
     fun refreshMediaSessions(context: Context) {
@@ -279,13 +284,15 @@ object AodLiveStateHolder {
                 return
             }
 
-            if (activeSamsungController?.sessionToken != selected.sessionToken) {
-                detachCurrentController()
-                activeSamsungController = selected
-                try {
-                    selected.registerCallback(mediaCallback, mainHandler)
-                } catch (_: Throwable) {
-                    // Ignored
+            synchronized(mediaLock) {
+                if (activeSamsungController?.sessionToken != selected.sessionToken) {
+                    detachCurrentController()
+                    activeSamsungController = selected
+                    try {
+                        selected.registerCallback(mediaCallback, mainHandler)
+                    } catch (_: Throwable) {
+                        // Ignored
+                    }
                 }
             }
 
@@ -297,14 +304,16 @@ object AodLiveStateHolder {
     }
 
     private fun detachCurrentController() {
-        activeSamsungController?.let {
-            try {
-                it.unregisterCallback(mediaCallback)
-            } catch (_: Throwable) {
-                // Ignored
+        synchronized(mediaLock) {
+            activeSamsungController?.let {
+                try {
+                    it.unregisterCallback(mediaCallback)
+                } catch (_: Throwable) {
+                    // Ignored
+                }
             }
+            activeSamsungController = null
         }
-        activeSamsungController = null
     }
 
     private fun publishSamsungMusicFromController(controller: MediaController?) {

@@ -199,20 +199,24 @@ object AodScreenOffController {
 
     fun start(context: Context) {
         val appContext = context.applicationContext
+        val repo = AodPreferencesRepository(appContext)
+        if (cachedAutoEnabled == null) {
+            cachedAutoEnabled = repo.getCachedAutoAodEnabled()
+        }
+        if (cachedOnlyCharging == null) {
+            cachedOnlyCharging = repo.getCachedAutoAodOnlyCharging()
+        }
         synchronized(lock) {
-            val repo = AodPreferencesRepository(appContext)
-            if (cachedAutoEnabled == null) {
-                cachedAutoEnabled = repo.getCachedAutoAodEnabled()
-            }
-            if (cachedOnlyCharging == null) {
-                cachedOnlyCharging = repo.getCachedAutoAodOnlyCharging()
-            }
             if (prefsJob == null) {
-                prefsJob = scope.launch {
-                    repo.preferencesFlow.collect { prefs ->
-                        currentPrefs = prefs
-                        cachedAutoEnabled = prefs.autoAodOnScreenOff
-                        cachedOnlyCharging = prefs.autoAodOnlyCharging
+                prefsJob = scope.launch(Dispatchers.IO) {
+                    try {
+                        repo.preferencesFlow.collect { prefs ->
+                            currentPrefs = prefs
+                            cachedAutoEnabled = prefs.autoAodOnScreenOff
+                            cachedOnlyCharging = prefs.autoAodOnlyCharging
+                        }
+                    } catch (_: Throwable) {
+                        // Safe fallback
                     }
                 }
             }
@@ -578,20 +582,22 @@ object AodScreenOffController {
 
     fun restoreSystemBrightnessIfNeeded(context: Context) {
         val appContext = context.applicationContext
-        try {
-            val prefs = appContext.getSharedPreferences(PREFS_BRIGHTNESS_BACKUP, Context.MODE_PRIVATE)
-            if (!prefs.getBoolean(KEY_HAS_BACKUP, false)) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                val prefs = appContext.getSharedPreferences(PREFS_BRIGHTNESS_BACKUP, Context.MODE_PRIVATE)
+                if (!prefs.getBoolean(KEY_HAS_BACKUP, false)) return@launch
 
-            val savedBri = prefs.getInt(KEY_SAVED_BRIGHTNESS, 128).coerceAtLeast(30)
-            val savedMode = prefs.getInt(KEY_SAVED_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC)
-            prefs.edit().putBoolean(KEY_HAS_BACKUP, false).commit()
+                val savedBri = prefs.getInt(KEY_SAVED_BRIGHTNESS, 128).coerceAtLeast(30)
+                val savedMode = prefs.getInt(KEY_SAVED_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC)
+                prefs.edit().putBoolean(KEY_HAS_BACKUP, false).apply()
 
-            if (!Settings.System.canWrite(appContext)) return
-            val cr = appContext.contentResolver
-            Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, savedBri)
-            Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, savedMode)
-        } catch (_: Throwable) {
-            // Safe fallback
+                if (!Settings.System.canWrite(appContext)) return@launch
+                val cr = appContext.contentResolver
+                Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, savedBri)
+                Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, savedMode)
+            } catch (_: Throwable) {
+                // Safe fallback
+            }
         }
     }
 }

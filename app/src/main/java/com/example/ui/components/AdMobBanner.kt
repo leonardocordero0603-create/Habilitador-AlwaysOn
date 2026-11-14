@@ -28,13 +28,15 @@ import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
 
 const val ADMOB_APP_ID = "ca-app-pub-2341195882564458~6732254176"
 const val ADMOB_BANNER_AD_UNIT_ID = "ca-app-pub-2341195882564458/6798722841"
-private val mobileAdsInitialized = AtomicBoolean(false)
+private val mobileAdsInitStarted = AtomicBoolean(false)
+private val mobileAdsReadyState = MutableStateFlow(false)
 
 @Composable
 fun AdMobBanner(
@@ -44,17 +46,25 @@ fun AdMobBanner(
     val context = LocalContext.current
     var adLoaded by remember { mutableStateOf(false) }
     var adFailed by remember { mutableStateOf(false) }
+    var adsReady by remember { mutableStateOf(mobileAdsReadyState.value) }
 
     LaunchedEffect(Unit) {
-        if (mobileAdsInitialized.compareAndSet(false, true)) {
-            withContext(Dispatchers.IO) {
-                try {
-                    MobileAds.initialize(context.applicationContext) {}
-                } catch (_: Throwable) {
-                    // Ignore if Google Play Services / AdMob is unavailable
+        if (mobileAdsInitStarted.compareAndSet(false, true)) {
+            try {
+                MobileAds.initialize(context.applicationContext) {
+                    mobileAdsReadyState.value = true
                 }
+            } catch (_: Throwable) {
+                mobileAdsReadyState.value = false
+                adFailed = true
             }
         }
+        if (!mobileAdsReadyState.value) {
+            withTimeoutOrNull(4500L) {
+                mobileAdsReadyState.first { it }
+            }
+        }
+        adsReady = true
     }
 
     Box(
@@ -65,7 +75,7 @@ fun AdMobBanner(
             .background(OledSurfaceElevated),
         contentAlignment = Alignment.Center
     ) {
-        if (!adFailed) {
+        if (!adFailed && adsReady) {
             AndroidView(
                 modifier = Modifier.fillMaxWidth(),
                 factory = { ctx ->
@@ -93,7 +103,7 @@ fun AdMobBanner(
                         }
                     } catch (_: Throwable) {
                         adFailed = true
-                        FrameLayout(context)
+                        FrameLayout(ctx)
                     }
                 },
                 onRelease = { view ->

@@ -1,6 +1,8 @@
 package com.example
 
 import android.content.Context
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.example.aod.AodWakeScreenActivity
 import com.example.aod.SamsungAodManager
@@ -246,5 +248,38 @@ class ExampleRobolectricTest {
         }
         assertTrue(repo.getCachedAutoAodOnlyCharging())
         com.example.aod.AodScreenOffController.setOnlyChargingMode(true)
+    }
+
+    @Test
+    fun `navigate across all tabs in AlwaysOnApp without freezing or crashing`() {
+        composeTestRule.setContent {
+            com.example.ui.theme.AlwaysOnTheme(darkTheme = true) {
+                AlwaysOnApp()
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("nav_tab_styles").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("nav_tab_compatibility").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("nav_tab_activate").performClick()
+        composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun `auto service and boot receiver handle lifecycle cleanly`() {
+        val serviceController = Robolectric.buildService(com.example.aod.AODAutoService::class.java)
+            .create()
+            .startCommand(0, 1)
+        assertTrue(com.example.aod.AODAutoService.isRunning)
+        serviceController.destroy()
+        assertFalse(com.example.aod.AODAutoService.isRunning)
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val bootReceiver = com.example.aod.AodBootReceiver()
+        bootReceiver.onReceive(
+            context,
+            android.content.Intent(android.content.Intent.ACTION_BOOT_COMPLETED)
+        )
     }
 }
