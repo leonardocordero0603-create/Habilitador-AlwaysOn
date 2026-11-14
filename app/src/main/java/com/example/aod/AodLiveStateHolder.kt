@@ -239,45 +239,68 @@ object AodLiveStateHolder {
     }
 
     private fun handleActiveSessions(controllers: List<MediaController>?) {
-        val samsungControllers = controllers
-            ?.filter { it.packageName in SAMSUNG_MUSIC_PACKAGES }
-            .orEmpty()
+        try {
+            val samsungControllers = controllers
+                ?.filter {
+                    try {
+                        it.packageName in SAMSUNG_MUSIC_PACKAGES
+                    } catch (_: Throwable) {
+                        false
+                    }
+                }
+                .orEmpty()
 
-        val selected = samsungControllers.firstOrNull { controller ->
-            val st = controller.playbackState?.state
-            st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING
-        } ?: samsungControllers.firstOrNull { controller ->
-            val st = controller.playbackState?.state
-            val hasTitle = !extractTitle(controller.metadata).isNullOrBlank()
-            (st == PlaybackState.STATE_PAUSED || st == PlaybackState.STATE_STOPPED) && hasTitle
-        } ?: samsungControllers.firstOrNull { controller ->
-            !extractTitle(controller.metadata).isNullOrBlank()
-        }
+            val selected = samsungControllers.firstOrNull { controller ->
+                try {
+                    val st = controller.playbackState?.state
+                    st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING
+                } catch (_: Throwable) {
+                    false
+                }
+            } ?: samsungControllers.firstOrNull { controller ->
+                try {
+                    val st = controller.playbackState?.state
+                    val hasTitle = !extractTitle(controller.metadata).isNullOrBlank()
+                    (st == PlaybackState.STATE_PAUSED || st == PlaybackState.STATE_STOPPED) && hasTitle
+                } catch (_: Throwable) {
+                    false
+                }
+            } ?: samsungControllers.firstOrNull { controller ->
+                try {
+                    !extractTitle(controller.metadata).isNullOrBlank()
+                } catch (_: Throwable) {
+                    false
+                }
+            }
 
-        if (selected == null) {
+            if (selected == null) {
+                detachCurrentController()
+                _samsungMusic.value = null
+                return
+            }
+
+            if (activeSamsungController?.sessionToken != selected.sessionToken) {
+                detachCurrentController()
+                activeSamsungController = selected
+                try {
+                    selected.registerCallback(mediaCallback, mainHandler)
+                } catch (_: Throwable) {
+                    // Ignored
+                }
+            }
+
+            publishSamsungMusicFromController(selected)
+        } catch (_: Throwable) {
             detachCurrentController()
             _samsungMusic.value = null
-            return
         }
-
-        if (activeSamsungController?.sessionToken != selected.sessionToken) {
-            detachCurrentController()
-            activeSamsungController = selected
-            try {
-                selected.registerCallback(mediaCallback, mainHandler)
-            } catch (_: Exception) {
-                // Ignored
-            }
-        }
-
-        publishSamsungMusicFromController(selected)
     }
 
     private fun detachCurrentController() {
         activeSamsungController?.let {
             try {
                 it.unregisterCallback(mediaCallback)
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 // Ignored
             }
         }
@@ -285,45 +308,49 @@ object AodLiveStateHolder {
     }
 
     private fun publishSamsungMusicFromController(controller: MediaController?) {
-        if (controller == null || controller.packageName !in SAMSUNG_MUSIC_PACKAGES) {
-            _samsungMusic.value = null
-            return
-        }
-
-        val playback = controller.playbackState
-        val metadata = controller.metadata
-        val state = playback?.state ?: PlaybackState.STATE_NONE
-        if (state == PlaybackState.STATE_NONE || state == PlaybackState.STATE_ERROR) {
-            val titleCheck = extractTitle(metadata)
-            if (titleCheck.isNullOrBlank()) {
+        try {
+            if (controller == null || controller.packageName !in SAMSUNG_MUSIC_PACKAGES) {
                 _samsungMusic.value = null
                 return
             }
+
+            val playback = controller.playbackState
+            val metadata = controller.metadata
+            val state = playback?.state ?: PlaybackState.STATE_NONE
+            if (state == PlaybackState.STATE_NONE || state == PlaybackState.STATE_ERROR) {
+                val titleCheck = extractTitle(metadata)
+                if (titleCheck.isNullOrBlank()) {
+                    _samsungMusic.value = null
+                    return
+                }
+            }
+
+            val title = extractTitle(metadata) ?: "Samsung Music"
+            val artist = extractArtist(metadata) ?: ""
+            val isPlaying = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING
+            val artBitmap = extractAlbumArt(metadata)
+            val scaledArt = artBitmap?.let { scaleBitmapDown(it, 160) }
+            val accentArgb = scaledArt?.let { sampleAccentArgb(it) }
+            val durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.coerceAtLeast(0L) ?: 0L
+            val positionMs = playback?.position?.coerceAtLeast(0L) ?: 0L
+            val speed = playback?.playbackSpeed?.takeIf { it > 0f } ?: 1f
+            val updateTime = playback?.lastPositionUpdateTime?.takeIf { it > 0L }
+                ?: SystemClock.elapsedRealtime()
+
+            _samsungMusic.value = SamsungMusicState(
+                title = title,
+                artist = artist,
+                isPlaying = isPlaying,
+                albumArt = scaledArt?.asImageBitmap(),
+                accentArgb = accentArgb,
+                durationMs = durationMs,
+                positionMs = positionMs,
+                playbackSpeed = speed,
+                positionUpdateTimeMs = updateTime
+            )
+        } catch (_: Throwable) {
+            _samsungMusic.value = null
         }
-
-        val title = extractTitle(metadata) ?: "Samsung Music"
-        val artist = extractArtist(metadata) ?: ""
-        val isPlaying = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING
-        val artBitmap = extractAlbumArt(metadata)
-        val scaledArt = artBitmap?.let { scaleBitmapDown(it, 160) }
-        val accentArgb = scaledArt?.let { sampleAccentArgb(it) }
-        val durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION)?.coerceAtLeast(0L) ?: 0L
-        val positionMs = playback?.position?.coerceAtLeast(0L) ?: 0L
-        val speed = playback?.playbackSpeed?.takeIf { it > 0f } ?: 1f
-        val updateTime = playback?.lastPositionUpdateTime?.takeIf { it > 0L }
-            ?: SystemClock.elapsedRealtime()
-
-        _samsungMusic.value = SamsungMusicState(
-            title = title,
-            artist = artist,
-            isPlaying = isPlaying,
-            albumArt = scaledArt?.asImageBitmap(),
-            accentArgb = accentArgb,
-            durationMs = durationMs,
-            positionMs = positionMs,
-            playbackSpeed = speed,
-            positionUpdateTimeMs = updateTime
-        )
     }
 
     private fun extractTitle(metadata: MediaMetadata?): String? {
@@ -366,6 +393,7 @@ object AodLiveStateHolder {
     }
 
     private fun sampleAccentArgb(bitmap: Bitmap): Int? {
+        if (bitmap.isRecycled) return null
         return try {
             val sample = Bitmap.createScaledBitmap(bitmap, 8, 8, true)
             var rSum = 0L

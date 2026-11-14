@@ -31,6 +31,98 @@ class ExampleRobolectricTest {
         assertEquals("Always On", appName)
     }
 
+    @get:org.junit.Rule
+    val composeTestRule = androidx.compose.ui.test.junit4.createComposeRule()
+
+    @Test
+    fun `launch MainActivity directly without crash or hang`() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+        assertFalse(activity.isDestroyed)
+        assertFalse(activity.isFinishing)
+        controller.pause().stop().destroy()
+    }
+
+    @Test
+    fun `launch AODDisplayActivity directly without crash`() {
+        val controller = Robolectric.buildActivity(com.example.aod.AODDisplayActivity::class.java).setup()
+        val activity = controller.get()
+        assertFalse(activity.isDestroyed)
+        controller.pause().stop().destroy()
+    }
+
+    @Test
+    fun `render AlwaysOnApp Compose UI directly`() {
+        composeTestRule.setContent {
+            com.example.ui.theme.AlwaysOnTheme(darkTheme = true) {
+                AlwaysOnApp()
+            }
+        }
+        composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun `render StylesScreen Compose UI directly`() {
+        composeTestRule.setContent {
+            com.example.ui.theme.AlwaysOnTheme(darkTheme = true) {
+                val context = ApplicationProvider.getApplicationContext<Context>()
+                val state = com.example.ui.AodUiState(
+                    deviceStatus = SamsungAodManager(context).createInitialFallbackStatus()
+                )
+                com.example.ui.screens.StylesScreen(
+                    uiState = state,
+                    onApplyThemePreset = {},
+                    onSelectClockStyle = {},
+                    onSelectClockFont = {},
+                    onSelectAccentColor = {},
+                    onClockScaleChange = {},
+                    onToggleAlignLeft = {},
+                    onBrightnessChange = {},
+                    onToggleBurnIn = {},
+                    onTogglePocketMode = {},
+                    onToggle24Hour = {},
+                    onToggleShowBattery = {},
+                    onToggleShowDate = {},
+                    onToggleShowSeconds = {},
+                    onToggleShowNotifications = {},
+                    onToggleShowMusicControls = {},
+                    onSelectTransitionStyle = {},
+                    onCustomLabelChange = {},
+                    onLaunchPreviewFullscreen = {},
+                    onUnlockPro = {},
+                    onRestorePurchases = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun `render CompatibilityScreen Compose UI directly`() {
+        composeTestRule.setContent {
+            com.example.ui.theme.AlwaysOnTheme(darkTheme = true) {
+                val context = ApplicationProvider.getApplicationContext<Context>()
+                val state = com.example.ui.AodUiState(
+                    deviceStatus = SamsungAodManager(context).createInitialFallbackStatus()
+                )
+                com.example.ui.screens.CompatibilityScreen(
+                    uiState = state,
+                    onToggleNativeAod = {},
+                    onSetTapToShowMode = {},
+                    onOpenSamsungAodSettings = {},
+                    onOpenWriteSettingsPermission = {},
+                    onDismissWriteSettingsDialog = {},
+                    onOpenOverlayPermissionSettings = {},
+                    onOpenFullScreenIntentSettings = {},
+                    onOpenNotificationListenerSettings = {},
+                    onOpenAppBatterySettings = {},
+                    onRunNextOptimization = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+    }
+
     @Test
     fun `inspect device status and adb commands`() {
         val context = ApplicationProvider.getApplicationContext<Context>()

@@ -30,40 +30,60 @@ class AODAutoService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        isRunning = true
-        AodScreenOffController.start(applicationContext)
+        try {
+            isRunning = true
+            AodScreenOffController.start(applicationContext)
 
-        serviceScope.launch {
-            SamsungAodManager(applicationContext).applyMaximumPerformanceOptimizations(
-                enableAod = true,
-                tapToShow = false
-            )
+            serviceScope.launch {
+                try {
+                    SamsungAodManager(applicationContext).applyMaximumPerformanceOptimizations(
+                        enableAod = true,
+                        tapToShow = false
+                    )
+                } catch (_: Throwable) {
+                    // Safe fallback
+                }
+            }
+        } catch (_: Throwable) {
+            // Safe fallback
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP_SERVICE) {
-            serviceScope.launch {
-                AodPreferencesRepository(applicationContext).updateAutoAodOnScreenOff(false)
+        try {
+            if (intent?.action == ACTION_STOP_SERVICE) {
+                serviceScope.launch {
+                    try {
+                        AodPreferencesRepository(applicationContext).updateAutoAodOnScreenOff(false)
+                    } catch (_: Throwable) {
+                        // Safe fallback
+                    }
+                }
+                AodScreenOffController.stop(applicationContext)
+                stopSelf()
+                return START_NOT_STICKY
             }
-            AodScreenOffController.stop(applicationContext)
-            stopSelf()
-            return START_NOT_STICKY
-        }
 
-        isRunning = true
-        AodScreenOffController.start(applicationContext)
+            isRunning = true
+            AodScreenOffController.start(applicationContext)
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
         return START_STICKY
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        if (AodPreferencesRepository(applicationContext).getCachedAutoAodEnabled()) {
-            try {
-                applicationContext.startService(Intent(applicationContext, AODAutoService::class.java))
-            } catch (_: Exception) {
-                // System-bound NotificationListenerService keeps AodScreenOffController active silently
+        try {
+            if (AodPreferencesRepository(applicationContext).getCachedAutoAodEnabled()) {
+                try {
+                    applicationContext.startService(Intent(applicationContext, AODAutoService::class.java))
+                } catch (_: Throwable) {
+                    // System-bound NotificationListenerService keeps AodScreenOffController active silently
+                }
             }
+        } catch (_: Throwable) {
+            // Safe fallback
         }
     }
 

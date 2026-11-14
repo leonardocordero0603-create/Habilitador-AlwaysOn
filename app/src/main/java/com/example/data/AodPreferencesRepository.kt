@@ -14,8 +14,11 @@ import com.example.model.AodClockStyle
 import com.example.model.AodPreferences
 import com.example.model.AodThemePreset
 import com.example.model.AodTransitionStyle
+import androidx.datastore.preferences.core.emptyPreferences
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 
 private val Context.aodDataStore: DataStore<Preferences> by preferencesDataStore(name = "aod_preferences")
 
@@ -43,22 +46,41 @@ class AodPreferencesRepository(private val context: Context) {
         val IS_PRO_UNLOCKED = booleanPreferencesKey("is_pro_unlocked")
     }
 
-    private val quickCache = context.getSharedPreferences("aod_quick_cache", Context.MODE_PRIVATE)
+    private val quickCache by lazy {
+        runCatching {
+            context.applicationContext.getSharedPreferences("aod_quick_cache", Context.MODE_PRIVATE)
+        }.getOrNull()
+    }
 
-    val preferencesFlow: Flow<AodPreferences> = context.aodDataStore.data.map { prefs ->
-        val autoEnabled = prefs[Keys.AUTO_AOD_ON_SCREEN_OFF] ?: false
-        val onlyCharging = prefs[Keys.AUTO_AOD_ONLY_CHARGING] ?: false
-        val brightness = (prefs[Keys.BRIGHTNESS_LEVEL] ?: 0.14f).coerceIn(0.03f, 0.45f)
-        if (quickCache.getBoolean("auto_aod_on_screen_off", false) != autoEnabled ||
-            quickCache.getBoolean("auto_aod_only_charging", false) != onlyCharging ||
-            quickCache.getFloat("brightness_level", 0.14f) != brightness
-        ) {
-            quickCache.edit()
-                .putBoolean("auto_aod_on_screen_off", autoEnabled)
-                .putBoolean("auto_aod_only_charging", onlyCharging)
-                .putFloat("brightness_level", brightness)
-                .apply()
+    val preferencesFlow: Flow<AodPreferences> = context.aodDataStore.data
+        .catch { exception ->
+            if (exception is IOException) {
+                emit(emptyPreferences())
+            } else {
+                emit(emptyPreferences())
+            }
         }
+        .map { prefs ->
+            val autoEnabled = prefs[Keys.AUTO_AOD_ON_SCREEN_OFF] ?: false
+            val onlyCharging = prefs[Keys.AUTO_AOD_ONLY_CHARGING] ?: false
+            val brightness = (prefs[Keys.BRIGHTNESS_LEVEL] ?: 0.14f).coerceIn(0.03f, 0.45f)
+            try {
+                val cache = quickCache
+                if (cache != null && (
+                        cache.getBoolean("auto_aod_on_screen_off", false) != autoEnabled ||
+                            cache.getBoolean("auto_aod_only_charging", false) != onlyCharging ||
+                            cache.getFloat("brightness_level", 0.14f) != brightness
+                        )
+                ) {
+                    cache.edit()
+                        .putBoolean("auto_aod_on_screen_off", autoEnabled)
+                        .putBoolean("auto_aod_only_charging", onlyCharging)
+                        .putFloat("brightness_level", brightness)
+                        .apply()
+                }
+            } catch (_: Throwable) {
+                // Ignore cache update issues
+            }
         AodPreferences(
             clockStyle = AodClockStyle.fromId(prefs[Keys.CLOCK_STYLE]),
             clockFont = AodClockFont.fromId(prefs[Keys.CLOCK_FONT]),
@@ -82,14 +104,17 @@ class AodPreferencesRepository(private val context: Context) {
         )
     }
 
-    fun getCachedBrightness(): Float =
-        quickCache.getFloat("brightness_level", 0.14f).coerceIn(0.03f, 0.45f)
+    fun getCachedBrightness(): Float = runCatching {
+        quickCache?.getFloat("brightness_level", 0.14f)
+    }.getOrNull()?.coerceIn(0.03f, 0.45f) ?: 0.14f
 
-    fun getCachedAutoAodEnabled(): Boolean =
-        quickCache.getBoolean("auto_aod_on_screen_off", false)
+    fun getCachedAutoAodEnabled(): Boolean = runCatching {
+        quickCache?.getBoolean("auto_aod_on_screen_off", false)
+    }.getOrNull() ?: false
 
-    fun getCachedAutoAodOnlyCharging(): Boolean =
-        quickCache.getBoolean("auto_aod_only_charging", false)
+    fun getCachedAutoAodOnlyCharging(): Boolean = runCatching {
+        quickCache?.getBoolean("auto_aod_only_charging", false)
+    }.getOrNull() ?: false
 
     suspend fun updateClockStyle(style: AodClockStyle) {
         context.aodDataStore.edit { it[Keys.CLOCK_STYLE] = style.id }
@@ -125,7 +150,7 @@ class AodPreferencesRepository(private val context: Context) {
 
     suspend fun updateBrightness(level: Float) {
         val clamped = level.coerceIn(0.03f, 0.45f)
-        quickCache.edit().putFloat("brightness_level", clamped).apply()
+        runCatching { quickCache?.edit()?.putFloat("brightness_level", clamped)?.apply() }
         context.aodDataStore.edit { it[Keys.BRIGHTNESS_LEVEL] = clamped }
     }
 
@@ -154,12 +179,12 @@ class AodPreferencesRepository(private val context: Context) {
     }
 
     suspend fun updateAutoAodOnScreenOff(enabled: Boolean) {
-        quickCache.edit().putBoolean("auto_aod_on_screen_off", enabled).apply()
+        runCatching { quickCache?.edit()?.putBoolean("auto_aod_on_screen_off", enabled)?.apply() }
         context.aodDataStore.edit { it[Keys.AUTO_AOD_ON_SCREEN_OFF] = enabled }
     }
 
     suspend fun updateAutoAodOnlyCharging(enabled: Boolean) {
-        quickCache.edit().putBoolean("auto_aod_only_charging", enabled).apply()
+        runCatching { quickCache?.edit()?.putBoolean("auto_aod_only_charging", enabled)?.apply() }
         context.aodDataStore.edit { it[Keys.AUTO_AOD_ONLY_CHARGING] = enabled }
     }
 

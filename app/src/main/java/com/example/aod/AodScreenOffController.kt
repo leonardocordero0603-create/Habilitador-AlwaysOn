@@ -188,7 +188,11 @@ object AodScreenOffController {
                     .setAutoCancel(true)
                     .setFullScreenIntent(fullScreenPendingIntent, true)
                     .build()
-                nm?.notify(TRIGGER_NOTIFICATION_ID, wakeNotification)
+                try {
+                    nm?.notify(TRIGGER_NOTIFICATION_ID, wakeNotification)
+                } catch (_: Throwable) {
+                    // Safe fallback
+                }
             }
         }
     }
@@ -266,15 +270,23 @@ object AodScreenOffController {
                 addAction(Intent.ACTION_POWER_DISCONNECTED)
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("UnspecifiedRegisterReceiverFlag")
-                appContext.registerReceiver(receiver, filter)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    try {
+                        appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                    } catch (_: SecurityException) {
+                        @Suppress("UnspecifiedRegisterReceiverFlag")
+                        appContext.registerReceiver(receiver, filter)
+                    }
+                } else {
+                    @Suppress("UnspecifiedRegisterReceiverFlag")
+                    appContext.registerReceiver(receiver, filter)
+                }
+                screenReceiver = receiver
+                isListening = true
+            } catch (_: Throwable) {
+                isListening = false
             }
-
-            screenReceiver = receiver
-            isListening = true
         }
     }
 
@@ -474,7 +486,11 @@ object AodScreenOffController {
                     .setFullScreenIntent(fullScreenPendingIntent, true)
                     .build()
 
-                nm?.notify(TRIGGER_NOTIFICATION_ID, triggerNotification)
+                try {
+                    nm?.notify(TRIGGER_NOTIFICATION_ID, triggerNotification)
+                } catch (_: Throwable) {
+                    // Safe fallback
+                }
             }
         }
     }
@@ -507,12 +523,16 @@ object AodScreenOffController {
 
     private fun acquireCpuHoldWakeLock(appContext: Context) {
         releaseCpuHoldWakeLock()
-        val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
-        cpuHoldWakeLock = pm?.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "AlwaysOn:ScreenOffWait"
-        )?.apply {
-            acquire(3000L)
+        try {
+            val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            cpuHoldWakeLock = pm?.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "AlwaysOn:ScreenOffWait"
+            )?.apply {
+                acquire(3000L)
+            }
+        } catch (_: Throwable) {
+            cpuHoldWakeLock = null
         }
     }
 
@@ -521,7 +541,7 @@ object AodScreenOffController {
             if (it.isHeld) {
                 try {
                     it.release()
-                } catch (_: Exception) {
+                } catch (_: Throwable) {
                     // Ignored
                 }
             }
@@ -530,67 +550,47 @@ object AodScreenOffController {
     }
 
     private fun cancelTriggerNotification(appContext: Context) {
-        val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        nm?.cancel(TRIGGER_NOTIFICATION_ID)
+        try {
+            val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancel(TRIGGER_NOTIFICATION_ID)
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
     }
 
     fun isDeviceCharging(appContext: Context): Boolean {
-        val batteryIntent = appContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-        val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
-        return plugged > 0 ||
-            status == BatteryManager.BATTERY_STATUS_CHARGING ||
-            status == BatteryManager.BATTERY_STATUS_FULL
+        return try {
+            val batteryIntent = appContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+            plugged > 0 ||
+                status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     fun dimSystemBrightnessBeforeWake(context: Context) {
-        val appContext = context.applicationContext
-        if (!Settings.System.canWrite(appContext)) return
-        try {
-            val prefs = appContext.getSharedPreferences(PREFS_BRIGHTNESS_BACKUP, Context.MODE_PRIVATE)
-            if (!prefs.getBoolean(KEY_HAS_BACKUP, false)) {
-                val cr = appContext.contentResolver
-                val currentMode = Settings.System.getInt(
-                    cr,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                )
-                val currentBri = Settings.System.getInt(cr, Settings.System.SCREEN_BRIGHTNESS, 128)
-                prefs.edit()
-                    .putBoolean(KEY_HAS_BACKUP, true)
-                    .putInt(KEY_SAVED_BRIGHTNESS, currentBri)
-                    .putInt(KEY_SAVED_MODE, currentMode)
-                    .commit()
-
-                if (currentMode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC) {
-                    Settings.System.putInt(
-                        cr,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                    )
-                }
-            }
-            Settings.System.putInt(appContext.contentResolver, Settings.System.SCREEN_BRIGHTNESS, 1)
-        } catch (_: Exception) {
-            // Safe fallback on restricted OEM keys
-        }
+        // Window brightness in AODDisplayActivity already controls OLED panel brightness safely
+        // without modifying or corrupting the user's Android system brightness settings.
     }
 
     fun restoreSystemBrightnessIfNeeded(context: Context) {
         val appContext = context.applicationContext
-        val prefs = appContext.getSharedPreferences(PREFS_BRIGHTNESS_BACKUP, Context.MODE_PRIVATE)
-        if (!prefs.getBoolean(KEY_HAS_BACKUP, false)) return
-
-        val savedBri = prefs.getInt(KEY_SAVED_BRIGHTNESS, 128)
-        val savedMode = prefs.getInt(KEY_SAVED_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
-        prefs.edit().putBoolean(KEY_HAS_BACKUP, false).commit()
-
-        if (!Settings.System.canWrite(appContext)) return
         try {
+            val prefs = appContext.getSharedPreferences(PREFS_BRIGHTNESS_BACKUP, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(KEY_HAS_BACKUP, false)) return
+
+            val savedBri = prefs.getInt(KEY_SAVED_BRIGHTNESS, 128).coerceAtLeast(30)
+            val savedMode = prefs.getInt(KEY_SAVED_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC)
+            prefs.edit().putBoolean(KEY_HAS_BACKUP, false).commit()
+
+            if (!Settings.System.canWrite(appContext)) return
             val cr = appContext.contentResolver
             Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, savedBri)
             Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, savedMode)
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             // Safe fallback
         }
     }

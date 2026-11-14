@@ -76,88 +76,132 @@ class SamsungAodManager(private val context: Context) {
         const val APP_SHARE_URL = "https://ais-pre-jrxzfwmq343cdhxug3bhs7-537917905441.us-west2.run.app"
     }
 
-    fun inspectDeviceStatus(): SamsungDeviceStatus {
-        val manufacturer = Build.MANUFACTURER ?: "Desconocido"
+    fun createInitialFallbackStatus(): SamsungDeviceStatus {
+        val manufacturer = Build.MANUFACTURER ?: "Android"
         val brand = Build.BRAND ?: manufacturer
-        val model = Build.MODEL ?: "Dispositivo Android"
+        val model = Build.MODEL ?: "Dispositivo"
         val androidVersion = Build.VERSION.RELEASE ?: Build.VERSION.SDK_INT.toString()
-        val sdkInt = Build.VERSION.SDK_INT
-
-        val hasSamsungAod = isPackageInstalled(SAMSUNG_AOD_PACKAGE)
-        val oneUiVersion = detectOneUiVersion()
-
-        val nativeAodMode = readSystemInt(KEY_AOD_MODE)
-        val tapToShowMode = readSystemInt(KEY_AOD_TAP_TO_SHOW)
-        val dozeAlwaysOn = readSecureInt(KEY_DOZE_ALWAYS_ON)
-
-        val canWriteSettings = Settings.System.canWrite(context)
-        val hasWriteSecure = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_SECURE_SETTINGS
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val hasPostNotifications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-        } else {
-            true
-        }
-
-        val hasFullScreenIntent = hasFullScreenIntentPermission()
-        val hasProximitySensor = detectProximitySensor()
-
         val isSamsung = manufacturer.equals("samsung", ignoreCase = true) ||
             brand.equals("samsung", ignoreCase = true)
-
-        val tier = when {
-            isSamsung && hasSamsungAod -> DeviceCompatibilityTier.SAMSUNG_NATIVE_READY
-            isSamsung -> DeviceCompatibilityTier.SAMSUNG_CORE_UNIVERSAL
-            else -> DeviceCompatibilityTier.ANDROID_UNIVERSAL
-        }
-
-        val (batteryPercent, isCharging) = readBatterySnapshot()
-
         return SamsungDeviceStatus(
             manufacturer = manufacturer,
             brand = brand,
             model = model,
             androidVersion = androidVersion,
-            sdkInt = sdkInt,
-            oneUiVersion = oneUiVersion,
-            hasSamsungAodPackage = hasSamsungAod,
-            nativeAodMode = nativeAodMode,
-            tapToShowMode = tapToShowMode,
-            dozeAlwaysOn = dozeAlwaysOn,
-            canWriteSettings = canWriteSettings,
-            hasWriteSecureSettings = hasWriteSecure,
-            hasPostNotificationsPermission = hasPostNotifications,
-            hasNotificationListenerPermission = hasNotificationListenerPermission(),
-            hasFullScreenIntentPermission = hasFullScreenIntent,
-            hasOverlayPermission = hasOverlayPermission(),
-            hasProximitySensor = hasProximitySensor,
+            sdkInt = Build.VERSION.SDK_INT,
+            oneUiVersion = null,
+            hasSamsungAodPackage = false,
+            nativeAodMode = -1,
+            tapToShowMode = -1,
+            dozeAlwaysOn = -1,
+            canWriteSettings = false,
+            hasWriteSecureSettings = false,
+            hasPostNotificationsPermission = true,
+            hasNotificationListenerPermission = false,
+            hasFullScreenIntentPermission = true,
+            hasOverlayPermission = false,
+            hasProximitySensor = true,
             autoServiceRunning = AodScreenOffController.isListening || AODAutoService.isRunning,
-            isBatteryUnrestricted = isBatteryUnrestricted(),
-            tier = tier,
-            batteryPercent = batteryPercent,
-            isCharging = isCharging
+            isBatteryUnrestricted = false,
+            tier = if (isSamsung) DeviceCompatibilityTier.SAMSUNG_CORE_UNIVERSAL else DeviceCompatibilityTier.ANDROID_UNIVERSAL,
+            batteryPercent = null,
+            isCharging = false
         )
+    }
+
+    fun inspectDeviceStatus(): SamsungDeviceStatus {
+        return try {
+            val manufacturer = Build.MANUFACTURER ?: "Desconocido"
+            val brand = Build.BRAND ?: manufacturer
+            val model = Build.MODEL ?: "Dispositivo Android"
+            val androidVersion = Build.VERSION.RELEASE ?: Build.VERSION.SDK_INT.toString()
+            val sdkInt = Build.VERSION.SDK_INT
+
+            val hasSamsungAod = isPackageInstalled(SAMSUNG_AOD_PACKAGE)
+            val oneUiVersion = detectOneUiVersion()
+
+            val nativeAodMode = readSystemInt(KEY_AOD_MODE)
+            val tapToShowMode = readSystemInt(KEY_AOD_TAP_TO_SHOW)
+            val dozeAlwaysOn = readSecureInt(KEY_DOZE_ALWAYS_ON)
+
+            val canWriteSettings = try { Settings.System.canWrite(context) } catch (_: Throwable) { false }
+            val hasWriteSecure = try {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.WRITE_SECURE_SETTINGS
+                ) == PackageManager.PERMISSION_GRANTED
+            } catch (_: Throwable) { false }
+
+            val hasPostNotifications = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
+                } else {
+                    true
+                }
+            } catch (_: Throwable) { true }
+
+            val hasFullScreenIntent = hasFullScreenIntentPermission()
+            val hasProximitySensor = detectProximitySensor()
+
+            val isSamsung = manufacturer.equals("samsung", ignoreCase = true) ||
+                brand.equals("samsung", ignoreCase = true)
+
+            val tier = when {
+                isSamsung && hasSamsungAod -> DeviceCompatibilityTier.SAMSUNG_NATIVE_READY
+                isSamsung -> DeviceCompatibilityTier.SAMSUNG_CORE_UNIVERSAL
+                else -> DeviceCompatibilityTier.ANDROID_UNIVERSAL
+            }
+
+            val (batteryPercent, isCharging) = readBatterySnapshot()
+
+            SamsungDeviceStatus(
+                manufacturer = manufacturer,
+                brand = brand,
+                model = model,
+                androidVersion = androidVersion,
+                sdkInt = sdkInt,
+                oneUiVersion = oneUiVersion,
+                hasSamsungAodPackage = hasSamsungAod,
+                nativeAodMode = nativeAodMode,
+                tapToShowMode = tapToShowMode,
+                dozeAlwaysOn = dozeAlwaysOn,
+                canWriteSettings = canWriteSettings,
+                hasWriteSecureSettings = hasWriteSecure,
+                hasPostNotificationsPermission = hasPostNotifications,
+                hasNotificationListenerPermission = hasNotificationListenerPermission(),
+                hasFullScreenIntentPermission = hasFullScreenIntent,
+                hasOverlayPermission = hasOverlayPermission(),
+                hasProximitySensor = hasProximitySensor,
+                autoServiceRunning = AodScreenOffController.isListening || AODAutoService.isRunning,
+                isBatteryUnrestricted = isBatteryUnrestricted(),
+                tier = tier,
+                batteryPercent = batteryPercent,
+                isCharging = isCharging
+            )
+        } catch (_: Throwable) {
+            createInitialFallbackStatus()
+        }
     }
 
     fun applyMaximumPerformanceOptimizations(
         enableAod: Boolean = true,
         tapToShow: Boolean = false
     ): Boolean {
-        val targetValue = if (enableAod) 1 else 0
-        val tapValue = if (tapToShow) 1 else 0
-        val canWrite = Settings.System.canWrite(context)
-        val hasSecure = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_SECURE_SETTINGS
-        ) == PackageManager.PERMISSION_GRANTED
+        return try {
+            val targetValue = if (enableAod) 1 else 0
+            val tapValue = if (tapToShow) 1 else 0
+            val canWrite = try { Settings.System.canWrite(context) } catch (_: Throwable) { false }
+            val hasSecure = try {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.WRITE_SECURE_SETTINGS
+                ) == PackageManager.PERMISSION_GRANTED
+            } catch (_: Throwable) { false }
 
-        var anyApplied = false
+            var anyApplied = false
 
         if (canWrite || hasSecure) {
             try {
@@ -186,7 +230,10 @@ class SamsungAodManager(private val context: Context) {
             }
         }
 
-        return anyApplied
+            anyApplied
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     fun evaluateOptimizations(status: SamsungDeviceStatus): OptimizationSummary {
@@ -254,11 +301,13 @@ class SamsungAodManager(private val context: Context) {
     }
 
     fun setNativeAodEnabled(enabled: Boolean): AodActionResult {
-        val canWrite = Settings.System.canWrite(context)
-        val hasSecure = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_SECURE_SETTINGS
-        ) == PackageManager.PERMISSION_GRANTED
+        val canWrite = try { Settings.System.canWrite(context) } catch (_: Throwable) { false }
+        val hasSecure = try {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_SECURE_SETTINGS
+            ) == PackageManager.PERMISSION_GRANTED
+        } catch (_: Throwable) { false }
 
         if (!canWrite && !hasSecure) {
             return AodActionResult.RequiresWriteSettingsPermission
@@ -282,9 +331,14 @@ class SamsungAodManager(private val context: Context) {
 
     fun setTapToShowMode(tapToShow: Boolean): AodActionResult {
         val targetValue = if (tapToShow) 1 else 0
-        if (!Settings.System.canWrite(context) &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_SECURE_SETTINGS) != PackageManager.PERMISSION_GRANTED
-        ) {
+        val canWrite = try { Settings.System.canWrite(context) } catch (_: Throwable) { false }
+        val hasSecure = try {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_SECURE_SETTINGS
+            ) == PackageManager.PERMISSION_GRANTED
+        } catch (_: Throwable) { false }
+        if (!canWrite && !hasSecure) {
             return AodActionResult.RequiresWriteSettingsPermission
         }
 
@@ -326,10 +380,14 @@ class SamsungAodManager(private val context: Context) {
     }
 
     fun hasFullScreenIntentPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            nm?.canUseFullScreenIntent() ?: true
-        } else {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                nm?.canUseFullScreenIntent() ?: true
+            } else {
+                true
+            }
+        } catch (_: Throwable) {
             true
         }
     }
@@ -352,7 +410,11 @@ class SamsungAodManager(private val context: Context) {
         return false
     }
 
-    fun hasOverlayPermission(): Boolean = Settings.canDrawOverlays(context)
+    fun hasOverlayPermission(): Boolean = try {
+        Settings.canDrawOverlays(context)
+    } catch (_: Throwable) {
+        false
+    }
 
     fun openOverlayPermissionSettings(): Boolean {
         return try {
@@ -369,9 +431,11 @@ class SamsungAodManager(private val context: Context) {
         }
     }
 
-    fun isBatteryUnrestricted(): Boolean {
+    fun isBatteryUnrestricted(): Boolean = try {
         val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-        return pm?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+        pm?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+    } catch (_: Throwable) {
+        false
     }
 
     fun openAppBatterySettings(): Boolean {
@@ -501,30 +565,34 @@ class SamsungAodManager(private val context: Context) {
 
     fun requestAddQuickTile(onResult: (String) -> Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val statusBarManager = context.getSystemService(StatusBarManager::class.java)
-            if (statusBarManager != null) {
-                val componentName = ComponentName(context, AODTileService::class.java)
-                val label = context.getString(R.string.tile_aod_label)
-                val icon = Icon.createWithResource(context, R.drawable.ic_tile_aod)
-                statusBarManager.requestAddTileService(
-                    componentName,
-                    label,
-                    icon,
-                    ContextCompat.getMainExecutor(context)
-                ) { resultCode ->
-                    val message = when (resultCode) {
-                        StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ->
-                            "Botón rápido añadido al panel de control."
-                        StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED ->
-                            "El botón rápido Always On ya está en tu panel."
-                        StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED ->
-                            "No se añadió el botón rápido."
-                        else ->
-                            "Puedes añadir el botón «Always On» editando tu panel rápido."
+            try {
+                val statusBarManager = context.getSystemService(StatusBarManager::class.java)
+                if (statusBarManager != null) {
+                    val componentName = ComponentName(context, AODTileService::class.java)
+                    val label = context.getString(R.string.tile_aod_label)
+                    val icon = Icon.createWithResource(context, R.drawable.ic_tile_aod)
+                    statusBarManager.requestAddTileService(
+                        componentName,
+                        label,
+                        icon,
+                        ContextCompat.getMainExecutor(context)
+                    ) { resultCode ->
+                        val message = when (resultCode) {
+                            StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ->
+                                "Botón rápido añadido al panel de control."
+                            StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED ->
+                                "El botón rápido Always On ya está en tu panel."
+                            StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_NOT_ADDED ->
+                                "No se añadió el botón rápido."
+                            else ->
+                                "Puedes añadir el botón «Always On» editando tu panel rápido."
+                        }
+                        onResult(message)
                     }
-                    onResult(message)
+                    return
                 }
-                return
+            } catch (_: Throwable) {
+                // Fall through to manual guidance
             }
         }
         onResult("Desliza el panel rápido, pulsa el icono de edición y arrastra «Always On».")
@@ -553,9 +621,11 @@ class SamsungAodManager(private val context: Context) {
         }
     }
 
-    private fun detectProximitySensor(): Boolean {
+    private fun detectProximitySensor(): Boolean = try {
         val sm = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-        return sm?.getDefaultSensor(Sensor.TYPE_PROXIMITY) != null
+        sm?.getDefaultSensor(Sensor.TYPE_PROXIMITY) != null
+    } catch (_: Throwable) {
+        false
     }
 
     private fun readSystemInt(key: String): Int {
@@ -575,25 +645,29 @@ class SamsungAodManager(private val context: Context) {
     }
 
     private fun readBatterySnapshot(): Pair<Int?, Boolean> {
-        val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-        val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
-        val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-        val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        return try {
+            val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+            val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
 
-        val percent: Int? = if (level >= 0 && scale > 0) {
-            ((level * 100f) / scale).toInt().coerceIn(0, 100)
-        } else {
-            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-            val prop = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
-            if (prop in 0..100) prop else null
+            val percent: Int? = if (level >= 0 && scale > 0) {
+                ((level * 100f) / scale).toInt().coerceIn(0, 100)
+            } else {
+                val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+                val prop = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+                if (prop in 0..100) prop else null
+            }
+
+            val charging = plugged > 0 ||
+                status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+
+            percent to charging
+        } catch (_: Throwable) {
+            null to false
         }
-
-        val charging = plugged > 0 ||
-            status == BatteryManager.BATTERY_STATUS_CHARGING ||
-            status == BatteryManager.BATTERY_STATUS_FULL
-
-        return percent to charging
     }
 
     @SuppressLint("PrivateApi")

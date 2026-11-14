@@ -749,6 +749,7 @@ private fun AnalogOledClockFace(
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val radius = size.minDimension / 2f
+            if (radius <= 2.dp.toPx()) return@Canvas
             val center = Offset(size.width / 2f, size.height / 2f)
 
             drawCircle(
@@ -899,6 +900,7 @@ private fun OrbitChronoClockFace(
             val innerStroke = if (isThumbnail) 1.5.dp.toPx() else if (isPreview) 2.dp.toPx() else 3.dp.toPx()
             val pad = outerStroke / 2f + 2.dp.toPx()
             val outerDiameter = size.minDimension - pad * 2f
+            if (outerDiameter <= 2f) return@Canvas
 
             // Outer minute track + active sweep
             drawArc(
@@ -1034,12 +1036,14 @@ private fun DotMatrixClockFace(
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
+        if (size.minDimension <= 0f) return@Canvas
         val glyphs = timeText.mapNotNull { ch ->
             DOT_FONT_5X7[ch]?.let { ch to it }
         }
         if (glyphs.isEmpty()) return@Canvas
 
         val totalCols = glyphs.sumOf { it.second.first().length } + (glyphs.size - 1)
+        if (totalCols <= 0) return@Canvas
         val totalRows = 7
         val stepX = size.width / totalCols.toFloat()
         val stepY = size.height / totalRows.toFloat()

@@ -101,15 +101,16 @@ private val Destinations = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         try {
-            com.google.android.gms.ads.MobileAds.initialize(this) {}
-        } catch (_: Exception) {
-            // Ignore if Google Play Services not present in mock/preview
+            enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+                navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+            )
+        } catch (_: Throwable) {
+            // Safe fallback
         }
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
-        )
+
         setContent {
             AlwaysOnTheme(darkTheme = true) {
                 AlwaysOnApp()
@@ -119,7 +120,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        AodScreenOffController.restoreSystemBrightnessIfNeeded(applicationContext)
+        try {
+            AodScreenOffController.restoreSystemBrightnessIfNeeded(applicationContext)
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
     }
 }
 
@@ -236,7 +241,9 @@ fun AlwaysOnApp(viewModel: AodViewModel = viewModel()) {
                 NavHost(
                     navController = navController,
                     startDestination = ROUTE_ACTIVATE,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
                 ) {
                     composable(ROUTE_ACTIVATE) {
                         ActivateScreen(

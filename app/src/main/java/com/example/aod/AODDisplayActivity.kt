@@ -97,14 +97,22 @@ class AODDisplayActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         disableSystemTransition()
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            splashScreen.setOnExitAnimationListener { splashScreenView ->
-                splashScreenView.remove()
+        try {
+            enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+                navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+            )
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                splashScreen.setOnExitAnimationListener { splashScreenView ->
+                    splashScreenView.remove()
+                }
             }
+        } catch (_: Throwable) {
+            // Safe fallback
         }
         createdAtMs = System.currentTimeMillis()
         isFinishingSmartly = false
@@ -113,27 +121,35 @@ class AODDisplayActivity : ComponentActivity() {
         observedKeyguardLocked = isKeyguardCurrentlyLocked()
         preferencesRepository = AodPreferencesRepository(applicationContext)
 
-        // Configure pure black OLED window, cutout coverage, keep-screen-on, and 1% pre-reveal brightness BEFORE any draw
-        window.setBackgroundDrawable(ColorDrawable(AndroidColor.BLACK))
-        window.decorView.setBackgroundColor(AndroidColor.BLACK)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        try {
+            // Configure pure black OLED window, cutout coverage, keep-screen-on, and 1% pre-reveal brightness BEFORE any draw
+            window.setBackgroundDrawable(ColorDrawable(AndroidColor.BLACK))
+            window.decorView.setBackgroundColor(AndroidColor.BLACK)
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val lp = window.attributes
-        lp.screenBrightness = 0.01f
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            val lp = window.attributes
+            lp.screenBrightness = 0.01f
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+            window.attributes = lp
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+            } else {
+                @Suppress("DEPRECATION")
+                window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+            }
+        } catch (_: Throwable) {
+            // Safe fallback
         }
-        window.attributes = lp
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            nm?.cancel(AODAutoService.TRIGGER_NOTIFICATION_ID)
+        } catch (_: Throwable) {
+            // Safe fallback
         }
-
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-        nm?.cancel(AODAutoService.TRIGGER_NOTIFICATION_ID)
 
         // Synchronously attach a pure-black native root container before Compose runs
         val rootContainer = FrameLayout(this).apply {
@@ -205,11 +221,15 @@ class AODDisplayActivity : ComponentActivity() {
         hideSystemBars()
 
         // Enable turnScreenOn AFTER the pure-black root surface and black splash theme are configured
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setTurnScreenOn(true)
+            } else {
+                @Suppress("DEPRECATION")
+                window.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+            }
+        } catch (_: Throwable) {
+            // Safe fallback
         }
     }
 
@@ -227,16 +247,20 @@ class AODDisplayActivity : ComponentActivity() {
         transitionGeneration += 1
         mainHandler.removeCallbacks(forceFinishRunnable)
         observedKeyguardLocked = observedKeyguardLocked || isKeyguardCurrentlyLocked()
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            )
+        try {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            } else {
+                @Suppress("DEPRECATION")
+                window.addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                )
+            }
+        } catch (_: Throwable) {
+            // Safe fallback
         }
         disableSystemTransition()
         hideSystemBars()
@@ -275,8 +299,12 @@ class AODDisplayActivity : ComponentActivity() {
     }
 
     private fun isKeyguardCurrentlyLocked(): Boolean {
-        val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        return km?.isKeyguardLocked == true
+        return try {
+            val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            km?.isKeyguardLocked == true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun checkSmartKeyguardUnlock(): Boolean {
@@ -340,20 +368,24 @@ class AODDisplayActivity : ComponentActivity() {
         brightnessStageReady: Boolean,
         targetBrightness: Float
     ) {
-        if (covered) {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            val updatedLp = window.attributes
-            updatedLp.screenBrightness = 0.0f
-            window.attributes = updatedLp
-        } else {
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            val updatedLp = window.attributes
-            updatedLp.screenBrightness = if (brightnessStageReady) {
-                targetBrightness.coerceIn(0.03f, 0.45f)
+        try {
+            if (covered) {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                val updatedLp = window.attributes
+                updatedLp.screenBrightness = 0.0f
+                window.attributes = updatedLp
             } else {
-                0.01f
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                val updatedLp = window.attributes
+                updatedLp.screenBrightness = if (brightnessStageReady) {
+                    targetBrightness.coerceIn(0.03f, 0.45f)
+                } else {
+                    0.01f
+                }
+                window.attributes = updatedLp
             }
-            window.attributes = updatedLp
+        } catch (_: Throwable) {
+            // Safe fallback
         }
     }
 
@@ -436,38 +468,50 @@ class AODDisplayActivity : ComponentActivity() {
     }
 
     private fun clearLockScreenWindowFlags() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(false)
-            setTurnScreenOn(false)
-        } else {
-            @Suppress("DEPRECATION")
-            window.clearFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            )
-        }
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(false)
+                setTurnScreenOn(false)
+            } else {
+                @Suppress("DEPRECATION")
+                window.clearFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                )
+            }
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val updatedLp = window.attributes
-        updatedLp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-        window.attributes = updatedLp
+            val updatedLp = window.attributes
+            updatedLp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            window.attributes = updatedLp
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
     }
 
     private fun disableSystemTransition() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
-            overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
-        } else {
-            @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
+                overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
+            } else {
+                @Suppress("DEPRECATION")
+                overridePendingTransition(0, 0)
+            }
+        } catch (_: Throwable) {
+            // Safe fallback
         }
     }
 
     private fun hideSystemBars() {
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller.hide(WindowInsetsCompat.Type.systemBars())
+        try {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
     }
 }
 
@@ -562,26 +606,39 @@ private fun AodFullscreenScreen(
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
         }
-        val sticky = ContextCompat.registerReceiver(
-            context,
-            receiver,
-            filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+        val sticky = try {
+            ContextCompat.registerReceiver(
+                context,
+                receiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        } catch (_: Throwable) {
+            try {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                context.registerReceiver(receiver, filter)
+            } catch (_: Throwable) {
+                null
+            }
+        }
         sticky?.let { receiver.onReceive(context, it) }
 
         if (batteryPercent == null) {
-            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-            val prop = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
-            if (prop in 0..100) {
-                batteryPercent = prop
+            try {
+                val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+                val prop = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+                if (prop in 0..100) {
+                    batteryPercent = prop
+                }
+            } catch (_: Throwable) {
+                // Safe fallback
             }
         }
 
         onDispose {
             try {
                 context.unregisterReceiver(receiver)
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 // Already unregistered
             }
         }
@@ -593,8 +650,16 @@ private fun AodFullscreenScreen(
             return@DisposableEffect onDispose {}
         }
 
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-        val proximitySensor = sensorManager?.getDefaultSensor(Sensor.TYPE_PROXIMITY)
+        val sensorManager = try {
+            context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        } catch (_: Throwable) {
+            null
+        }
+        val proximitySensor = try {
+            sensorManager?.getDefaultSensor(Sensor.TYPE_PROXIMITY)
+        } catch (_: Throwable) {
+            null
+        }
         if (sensorManager == null || proximitySensor == null) {
             isPocketCovered = false
             return@DisposableEffect onDispose {}
@@ -609,10 +674,18 @@ private fun AodFullscreenScreen(
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
-        sensorManager.registerListener(listener, proximitySensor, SensorManager.SENSOR_DELAY_UI)
+        try {
+            sensorManager.registerListener(listener, proximitySensor, SensorManager.SENSOR_DELAY_UI)
+        } catch (_: Throwable) {
+            isPocketCovered = false
+        }
 
         onDispose {
-            sensorManager.unregisterListener(listener)
+            try {
+                sensorManager.unregisterListener(listener)
+            } catch (_: Throwable) {
+                // Safe fallback
+            }
         }
     }
 

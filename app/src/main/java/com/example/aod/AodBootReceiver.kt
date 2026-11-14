@@ -30,7 +30,7 @@ class AodBootReceiver : BroadcastReceiver() {
                     )
                     manager.startAutoAodService()
                 }
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 // Safely ignore on OEMs restricting background FGS boot start until next app open
             } finally {
                 pendingResult.finish()

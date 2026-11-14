@@ -15,10 +15,14 @@ import com.example.model.AodPreferences
 import com.example.model.AodThemePreset
 import com.example.model.AodTransitionStyle
 import com.example.model.SamsungDeviceStatus
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -38,10 +42,11 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
     private val aodManager = SamsungAodManager(application.applicationContext)
     private val prefsRepo = AodPreferencesRepository(application.applicationContext)
 
-    private val _deviceStatus = MutableStateFlow(aodManager.inspectDeviceStatus())
+    private val _deviceStatus = MutableStateFlow(aodManager.createInitialFallbackStatus())
     private val _feedbackMessage = MutableStateFlow<String?>(null)
     private val _showWriteSettingsDialog = MutableStateFlow(false)
     private val _showQrDialog = MutableStateFlow(false)
+    private var refreshJob: Job? = null
 
     val uiState: StateFlow<AodUiState> = combine(
         _deviceStatus,
@@ -50,16 +55,20 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
         _showWriteSettingsDialog,
         _showQrDialog
     ) { status, prefs, feedback, showDialog, showQr ->
-        AodUiState(
-            deviceStatus = status,
-            preferences = prefs,
-            optimizationSummary = aodManager.evaluateOptimizations(status),
-            feedbackMessage = feedback,
-            showWriteSettingsDialog = showDialog,
-            adbGrantCommand = aodManager.getAdbGrantCommand(),
-            adbEnableCommand = aodManager.getAdbEnableNativeAodCommand(),
-            showQrDialog = showQr
-        )
+        try {
+            AodUiState(
+                deviceStatus = status,
+                preferences = prefs,
+                optimizationSummary = aodManager.evaluateOptimizations(status),
+                feedbackMessage = feedback,
+                showWriteSettingsDialog = showDialog,
+                adbGrantCommand = aodManager.getAdbGrantCommand(),
+                adbEnableCommand = aodManager.getAdbEnableNativeAodCommand(),
+                showQrDialog = showQr
+            )
+        } catch (_: Throwable) {
+            AodUiState(deviceStatus = status, preferences = prefs)
+        }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -72,69 +81,98 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     init {
-        viewModelScope.launch {
-            prefsRepo.preferencesFlow.collect { prefs ->
-                if (prefs.autoAodOnScreenOff) {
-                    aodManager.applyMaximumPerformanceOptimizations(
-                        enableAod = true,
-                        tapToShow = false
-                    )
-                    if (!AodScreenOffController.isListening) {
-                        aodManager.startAutoAodService()
-                        refreshStatus()
+        refreshStatus()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                prefsRepo.preferencesFlow
+                    .map { it.autoAodOnScreenOff }
+                    .distinctUntilChanged()
+                    .collect { autoEnabled ->
+                        try {
+                            if (autoEnabled) {
+                                aodManager.applyMaximumPerformanceOptimizations(
+                                    enableAod = true,
+                                    tapToShow = false
+                                )
+                                if (!AodScreenOffController.isListening) {
+                                    aodManager.startAutoAodService()
+                                }
+                                refreshStatus()
+                            }
+                        } catch (_: Throwable) {
+                            // Safe fallback
+                        }
                     }
-                }
+            } catch (_: Throwable) {
+                // Safe fallback for preferences flow
             }
         }
     }
 
     fun refreshStatus() {
-        val current = aodManager.inspectDeviceStatus()
-        if (current.hasNotificationListenerPermission) {
-            AodLiveStateHolder.refreshMediaSessions(getApplication())
-        }
-        if (current.autoServiceRunning || uiState.value.preferences.autoAodOnScreenOff) {
-            aodManager.applyMaximumPerformanceOptimizations(enableAod = true, tapToShow = false)
-            _deviceStatus.value = aodManager.inspectDeviceStatus()
-        } else {
-            _deviceStatus.value = current
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val current = aodManager.inspectDeviceStatus()
+                if (current.hasNotificationListenerPermission) {
+                    AodLiveStateHolder.refreshMediaSessions(getApplication())
+                }
+                if (current.autoServiceRunning || uiState.value.preferences.autoAodOnScreenOff) {
+                    aodManager.applyMaximumPerformanceOptimizations(enableAod = true, tapToShow = false)
+                    _deviceStatus.value = aodManager.inspectDeviceStatus()
+                } else {
+                    _deviceStatus.value = current
+                }
+            } catch (_: Throwable) {
+                // Safe fallback
+            }
         }
     }
 
     fun runNextOptimizationStep() {
-        val status = aodManager.inspectDeviceStatus()
-        val summary = aodManager.evaluateOptimizations(status)
-        val next = summary.nextPendingStep
-        if (next == null) {
-            aodManager.applyMaximumPerformanceOptimizations(enableAod = true, tapToShow = false)
-            refreshStatus()
-            _feedbackMessage.value = "Rendimiento máximo activo: todos los ajustes están optimizados."
-        } else {
-            val opened = aodManager.openOptimizationStep(next)
-            if (!opened) {
-                _feedbackMessage.value = "Abre los ajustes de la app para activar: ${next.title}."
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val status = aodManager.inspectDeviceStatus()
+                val summary = aodManager.evaluateOptimizations(status)
+                val next = summary.nextPendingStep
+                if (next == null) {
+                    aodManager.applyMaximumPerformanceOptimizations(enableAod = true, tapToShow = false)
+                    _deviceStatus.value = aodManager.inspectDeviceStatus()
+                    _feedbackMessage.value = "Rendimiento máximo activo: todos los ajustes están optimizados."
+                } else {
+                    val opened = aodManager.openOptimizationStep(next)
+                    if (!opened) {
+                        _feedbackMessage.value = "Abre los ajustes de la app para activar: ${next.title}."
+                    }
+                }
+            } catch (_: Throwable) {
+                // Safe fallback
             }
         }
     }
 
     fun setAutoAodOnScreenOff(enabled: Boolean) {
-        viewModelScope.launch {
-            if (enabled) {
-                val status = aodManager.inspectDeviceStatus()
-                prefsRepo.updateAutoAodOnScreenOff(true)
-                aodManager.applyMaximumPerformanceOptimizations(enableAod = true, tapToShow = false)
-                aodManager.startAutoAodService()
-                _feedbackMessage.value = if (status.hasOverlayPermission || status.hasFullScreenIntentPermission) {
-                    "Always On activo sin notificaciones molestas."
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (enabled) {
+                    val status = aodManager.inspectDeviceStatus()
+                    prefsRepo.updateAutoAodOnScreenOff(true)
+                    aodManager.applyMaximumPerformanceOptimizations(enableAod = true, tapToShow = false)
+                    aodManager.startAutoAodService()
+                    _feedbackMessage.value = if (status.hasOverlayPermission || status.hasFullScreenIntentPermission) {
+                        "Always On activo sin notificaciones molestas."
+                    } else {
+                        "Always On iniciado. Activa «Aparecer encima» para mostrarlo al apagar la pantalla."
+                    }
                 } else {
-                    "Always On iniciado. Activa «Aparecer encima» para mostrarlo al apagar la pantalla."
+                    prefsRepo.updateAutoAodOnScreenOff(false)
+                    aodManager.stopAutoAodService()
+                    _feedbackMessage.value = "Always On automático desactivado."
                 }
-            } else {
-                prefsRepo.updateAutoAodOnScreenOff(false)
-                aodManager.stopAutoAodService()
-                _feedbackMessage.value = "Always On automático desactivado."
+                refreshStatus()
+            } catch (_: Throwable) {
+                // Safe fallback
             }
-            refreshStatus()
         }
     }
 
@@ -185,37 +223,41 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleNativeAod(enable: Boolean) {
-        when (val result = aodManager.setNativeAodEnabled(enable)) {
-            is AodActionResult.Success -> {
-                _feedbackMessage.value = result.message
-                refreshStatus()
-            }
-            AodActionResult.RequiresWriteSettingsPermission -> {
-                _showWriteSettingsDialog.value = true
-            }
-            is AodActionResult.RequiresNativeOrAdb -> {
-                _feedbackMessage.value = result.reason
-            }
-            is AodActionResult.Error -> {
-                _feedbackMessage.value = result.message
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = aodManager.setNativeAodEnabled(enable)) {
+                is AodActionResult.Success -> {
+                    _feedbackMessage.value = result.message
+                    refreshStatus()
+                }
+                AodActionResult.RequiresWriteSettingsPermission -> {
+                    _showWriteSettingsDialog.value = true
+                }
+                is AodActionResult.RequiresNativeOrAdb -> {
+                    _feedbackMessage.value = result.reason
+                }
+                is AodActionResult.Error -> {
+                    _feedbackMessage.value = result.message
+                }
             }
         }
     }
 
     fun setTapToShowMode(tapToShow: Boolean) {
-        when (val result = aodManager.setTapToShowMode(tapToShow)) {
-            is AodActionResult.Success -> {
-                _feedbackMessage.value = result.message
-                refreshStatus()
-            }
-            AodActionResult.RequiresWriteSettingsPermission -> {
-                _showWriteSettingsDialog.value = true
-            }
-            is AodActionResult.RequiresNativeOrAdb -> {
-                _feedbackMessage.value = result.reason
-            }
-            is AodActionResult.Error -> {
-                _feedbackMessage.value = result.message
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = aodManager.setTapToShowMode(tapToShow)) {
+                is AodActionResult.Success -> {
+                    _feedbackMessage.value = result.message
+                    refreshStatus()
+                }
+                AodActionResult.RequiresWriteSettingsPermission -> {
+                    _showWriteSettingsDialog.value = true
+                }
+                is AodActionResult.RequiresNativeOrAdb -> {
+                    _feedbackMessage.value = result.reason
+                }
+                is AodActionResult.Error -> {
+                    _feedbackMessage.value = result.message
+                }
             }
         }
     }

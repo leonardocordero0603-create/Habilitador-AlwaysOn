@@ -14,43 +14,59 @@ class AodNotificationListenerService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-        isConnected = true
-        AodLiveStateHolder.startMediaMonitoring(applicationContext)
-        refreshNotifications()
+        try {
+            isConnected = true
+            AodLiveStateHolder.startMediaMonitoring(applicationContext)
+            refreshNotifications()
 
-        if (AodPreferencesRepository(applicationContext).getCachedAutoAodEnabled()) {
-            AodScreenOffController.start(applicationContext)
-            SamsungAodManager(applicationContext).applyMaximumPerformanceOptimizations(
-                enableAod = true,
-                tapToShow = false
-            )
+            if (AodPreferencesRepository(applicationContext).getCachedAutoAodEnabled()) {
+                AodScreenOffController.start(applicationContext)
+                SamsungAodManager(applicationContext).applyMaximumPerformanceOptimizations(
+                    enableAod = true,
+                    tapToShow = false
+                )
+            }
+        } catch (_: Throwable) {
+            // Safe fallback
         }
     }
 
     override fun onListenerDisconnected() {
-        isConnected = false
-        AodLiveStateHolder.stopMediaMonitoring()
-        AodLiveStateHolder.clearAll()
-        if (!AODAutoService.isRunning) {
-            AodScreenOffController.stop(applicationContext)
+        try {
+            isConnected = false
+            AodLiveStateHolder.stopMediaMonitoring()
+            AodLiveStateHolder.clearAll()
+            if (!AODAutoService.isRunning) {
+                AodScreenOffController.stop(applicationContext)
+            }
+        } catch (_: Throwable) {
+            // Safe fallback
         }
         super.onListenerDisconnected()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        refreshNotifications()
-        AodLiveStateHolder.refreshMediaSessions(applicationContext)
+        try {
+            refreshNotifications()
+            AodLiveStateHolder.refreshMediaSessions(applicationContext)
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        refreshNotifications()
-        AodLiveStateHolder.refreshMediaSessions(applicationContext)
+        try {
+            refreshNotifications()
+            AodLiveStateHolder.refreshMediaSessions(applicationContext)
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
     }
 
     private fun refreshNotifications() {
         try {
             AodLiveStateHolder.updateNotifications(applicationContext, activeNotifications)
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             // Service may not yet be fully bound
         }
     }
