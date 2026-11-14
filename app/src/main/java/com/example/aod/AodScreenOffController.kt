@@ -148,29 +148,17 @@ object AodScreenOffController {
             )
         }
 
-        val canDirectStart = Settings.canDrawOverlays(appContext) ||
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
-
-        var launchedDirectly = false
-        if (canDirectStart) {
-            try {
-                val options = ActivityOptions.makeCustomAnimation(appContext, 0, 0)
-                appContext.startActivity(wakeIntent, options.toBundle())
-                launchedDirectly = true
-            } catch (_: Exception) {
-                launchedDirectly = false
-            }
+        val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        ensureTriggerChannel(nm)
+        val canUseFsi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            nm?.canUseFullScreenIntent() ?: true
+        } else {
+            true
         }
 
-        if (!launchedDirectly) {
-            val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            ensureTriggerChannel(nm)
-            val canUseFsi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                nm?.canUseFullScreenIntent() ?: true
-            } else {
-                true
-            }
-            if (canUseFsi) {
+        var launched = false
+        if (canUseFsi) {
+            try {
                 val fullScreenPendingIntent = PendingIntent.getActivity(
                     appContext,
                     TRIGGER_NOTIFICATION_ID + 1,
@@ -188,11 +176,19 @@ object AodScreenOffController {
                     .setAutoCancel(true)
                     .setFullScreenIntent(fullScreenPendingIntent, true)
                     .build()
-                try {
-                    nm?.notify(TRIGGER_NOTIFICATION_ID, wakeNotification)
-                } catch (_: Throwable) {
-                    // Safe fallback
-                }
+                nm?.notify(TRIGGER_NOTIFICATION_ID + 1, wakeNotification)
+                launched = true
+            } catch (_: Throwable) {
+                launched = false
+            }
+        }
+
+        if (!launched) {
+            try {
+                val options = ActivityOptions.makeCustomAnimation(appContext, 0, 0)
+                appContext.startActivity(wakeIntent, options.toBundle())
+            } catch (_: Exception) {
+                // Safe fallback
             }
         }
     }
@@ -445,35 +441,19 @@ object AodScreenOffController {
             putExtra(AODDisplayActivity.EXTRA_STARTED_AUTO_CHARGING, startedAutoCharging)
         }
 
-        val canDirectStart = Settings.canDrawOverlays(appContext) ||
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
-
-        var launchedDirectly = false
-        if (canDirectStart) {
-            try {
-                // Dim system brightness to minimum before waking the panel so StartingWindow never flashes bright
-                dimSystemBrightnessBeforeWake(appContext)
-                val options = ActivityOptions.makeCustomAnimation(appContext, 0, 0)
-                appContext.startActivity(launchIntent, options.toBundle())
-                launchedDirectly = true
-            } catch (_: Exception) {
-                restoreSystemBrightnessIfNeeded(appContext)
-                launchedDirectly = false
-            }
-        }
-
         val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
         nm?.cancel(TRIGGER_NOTIFICATION_ID)
+        ensureTriggerChannel(nm)
 
-        if (!launchedDirectly) {
-            ensureTriggerChannel(nm)
-            val canUseFsi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                nm?.canUseFullScreenIntent() ?: true
-            } else {
-                true
-            }
+        val canUseFsi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            nm?.canUseFullScreenIntent() ?: true
+        } else {
+            true
+        }
 
-            if (canUseFsi) {
+        var launched = false
+        if (canUseFsi) {
+            try {
                 val fullScreenPendingIntent = PendingIntent.getActivity(
                     appContext,
                     TRIGGER_NOTIFICATION_ID,
@@ -493,10 +473,23 @@ object AodScreenOffController {
                     .setFullScreenIntent(fullScreenPendingIntent, true)
                     .build()
 
+                nm?.notify(TRIGGER_NOTIFICATION_ID, triggerNotification)
+                launched = true
+            } catch (_: Throwable) {
+                launched = false
+            }
+        }
+
+        if (!launched) {
+            val canDirectStart = Settings.canDrawOverlays(appContext) ||
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+            if (canDirectStart) {
                 try {
-                    nm?.notify(TRIGGER_NOTIFICATION_ID, triggerNotification)
-                } catch (_: Throwable) {
-                    // Safe fallback
+                    dimSystemBrightnessBeforeWake(appContext)
+                    val options = ActivityOptions.makeCustomAnimation(appContext, 0, 0)
+                    appContext.startActivity(launchIntent, options.toBundle())
+                } catch (_: Exception) {
+                    restoreSystemBrightnessIfNeeded(appContext)
                 }
             }
         }
