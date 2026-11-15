@@ -1,5 +1,6 @@
 package com.example.aod
 
+import android.app.ActivityOptions
 import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.content.BroadcastReceiver
@@ -18,6 +19,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.provider.Settings
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -40,6 +42,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -176,18 +179,22 @@ class AODDisplayActivity : ComponentActivity() {
                 val prefs by preferencesRepository.preferencesFlow.collectAsStateWithLifecycle(
                     initialValue = AodPreferences(brightnessLevel = preferencesRepository.getCachedBrightness())
                 )
-                var brightnessStageReady by remember { mutableStateOf(false) }
+                var brightnessRampFraction by remember { mutableFloatStateOf(0f) }
 
                 LaunchedEffect(Unit) {
-                    delay(80L)
-                    brightnessStageReady = true
+                    delay(40L)
+                    val steps = 5
+                    for (step in 1..steps) {
+                        brightnessRampFraction = step / steps.toFloat()
+                        if (step < steps) delay(32L)
+                    }
                 }
 
                 SideEffect {
                     hideSystemBars()
                 }
 
-                LaunchedEffect(brightnessStageReady, prefs.brightnessLevel, prefs.pocketModeEnabled) {
+                LaunchedEffect(brightnessRampFraction, prefs.brightnessLevel, prefs.pocketModeEnabled) {
                     wantProximityScreenOff = prefs.pocketModeEnabled
                     syncProximityWakeLock()
                 }
@@ -195,7 +202,7 @@ class AODDisplayActivity : ComponentActivity() {
                 AlwaysOnTheme(darkTheme = true) {
                     AodFullscreenScreen(
                         preferences = prefs,
-                        brightnessStageReady = brightnessStageReady,
+                        brightnessRampFraction = brightnessRampFraction,
                         startedInAutoChargingMode = startedInAutoChargingMode,
                         isExiting = exitPhase != AodExitPhase.NONE,
                         exitDurationMs = when (exitPhase) {
@@ -208,7 +215,7 @@ class AODDisplayActivity : ComponentActivity() {
                         onProximityPowerStateChanged = { covered ->
                             applyWindowPowerState(
                                 covered = covered,
-                                brightnessStageReady = brightnessStageReady,
+                                brightnessRampFraction = brightnessRampFraction,
                                 targetBrightness = prefs.brightnessLevel
                             )
                         },
@@ -388,9 +395,10 @@ class AODDisplayActivity : ComponentActivity() {
 
     private fun applyWindowPowerState(
         covered: Boolean,
-        brightnessStageReady: Boolean,
+        brightnessRampFraction: Float,
         targetBrightness: Float
     ) {
+        if (exitPhase == AodExitPhase.POWER_PRESS || isFinishingSmartly) return
         try {
             if (covered) {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -399,12 +407,10 @@ class AODDisplayActivity : ComponentActivity() {
                 window.attributes = updatedLp
             } else {
                 window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                val clampedTarget = targetBrightness.coerceIn(0.03f, 0.45f)
+                val ramped = 0.01f + (clampedTarget - 0.01f) * brightnessRampFraction.coerceIn(0f, 1f)
                 val updatedLp = window.attributes
-                updatedLp.screenBrightness = if (brightnessStageReady) {
-                    targetBrightness.coerceIn(0.03f, 0.45f)
-                } else {
-                    0.01f
-                }
+                updatedLp.screenBrightness = ramped
                 window.attributes = updatedLp
             }
         } catch (_: Throwable) {
@@ -480,8 +486,30 @@ class AODDisplayActivity : ComponentActivity() {
         exitPhase = AodExitPhase.POWER_PRESS
         releaseProximityWakeLock()
         clearLockScreenWindowFlags()
-        AodScreenOffController.wakeLockScreenFromAod(applicationContext)
-        finishCleanly()
+
+        if (Settings.canDrawOverlays(this) || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            AodScreenOffController.wakeLockScreenFromAod(applicationContext)
+            finishCleanly()
+        } else {
+            // Without Overlay permission on Android 10+, launch handover directly from this
+            // foreground Activity after the brief sleep-settle window so it isn't delayed by BAL.
+            AodScreenOffController.prepareWakeFromForegroundAod(applicationContext)
+            mainHandler.postDelayed({
+                if (!isDestroyed && !isFinishingSmartly) {
+                    AodScreenOffController.triggerWakePulseOnly(applicationContext)
+                    try {
+                        val options = ActivityOptions.makeCustomAnimation(this, 0, 0)
+                        startActivity(
+                            AodScreenOffController.createWakeHandoverIntent(applicationContext),
+                            options.toBundle()
+                        )
+                    } catch (_: Throwable) {
+                        AodScreenOffController.wakeLockScreenFromAod(applicationContext)
+                    }
+                    finishCleanly()
+                }
+            }, 85L)
+        }
     }
 
     private fun finishUnlockedSmartly() {
@@ -548,7 +576,7 @@ class AODDisplayActivity : ComponentActivity() {
 @Composable
 private fun AodFullscreenScreen(
     preferences: AodPreferences,
-    brightnessStageReady: Boolean,
+    brightnessRampFraction: Float,
     startedInAutoChargingMode: Boolean,
     isExiting: Boolean,
     exitDurationMs: Int,
@@ -573,7 +601,7 @@ private fun AodFullscreenScreen(
     val latestAutoAodEnabled by androidx.compose.runtime.rememberUpdatedState(preferences.autoAodOnScreenOff)
     val latestStartedAutoCharging by androidx.compose.runtime.rememberUpdatedState(startedInAutoChargingMode)
 
-    LaunchedEffect(isPocketCovered, brightnessStageReady, preferences.brightnessLevel) {
+    LaunchedEffect(isPocketCovered, brightnessRampFraction, preferences.brightnessLevel) {
         onProximityPowerStateChanged(isPocketCovered)
     }
 

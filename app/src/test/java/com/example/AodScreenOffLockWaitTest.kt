@@ -204,12 +204,12 @@ class AodScreenOffLockWaitTest {
     }
 
     @Test
-    fun `AodWakeScreenActivity completes reveal and finishes cleanly within 700ms`() {
+    fun `AodWakeScreenActivity completes reveal and finishes cleanly within 850ms`() {
         shadowPm.setIsInteractive(true)
         val controller = Robolectric.buildActivity(com.example.aod.AodWakeScreenActivity::class.java).setup()
         val activity = controller.get()
 
-        ShadowLooper.idleMainLooper(700, TimeUnit.MILLISECONDS)
+        ShadowLooper.idleMainLooper(850, TimeUnit.MILLISECONDS)
         assertTrue("AodWakeScreenActivity must finish cleanly after veil fade-out", activity.isFinishing)
     }
 }

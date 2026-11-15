@@ -66,18 +66,24 @@ class AodPreferencesRepository(private val context: Context) {
             val autoEnabled = prefs[Keys.AUTO_AOD_ON_SCREEN_OFF] ?: false
             val onlyCharging = prefs[Keys.AUTO_AOD_ONLY_CHARGING] ?: false
             val brightness = (prefs[Keys.BRIGHTNESS_LEVEL] ?: 0.14f).coerceIn(0.03f, 0.45f)
+            val accentId = AodAccentColor.fromId(prefs[Keys.ACCENT_COLOR]).id
+            val transitionId = AodTransitionStyle.fromId(prefs[Keys.TRANSITION_STYLE]).id
             try {
                 val cache = quickCache
                 if (cache != null && (
                         cache.getBoolean("auto_aod_on_screen_off", false) != autoEnabled ||
                             cache.getBoolean("auto_aod_only_charging", false) != onlyCharging ||
-                            cache.getFloat("brightness_level", 0.14f) != brightness
+                            cache.getFloat("brightness_level", 0.14f) != brightness ||
+                            cache.getString("accent_color", null) != accentId ||
+                            cache.getString("transition_style", null) != transitionId
                         )
                 ) {
                     cache.edit()
                         .putBoolean("auto_aod_on_screen_off", autoEnabled)
                         .putBoolean("auto_aod_only_charging", onlyCharging)
                         .putFloat("brightness_level", brightness)
+                        .putString("accent_color", accentId)
+                        .putString("transition_style", transitionId)
                         .apply()
                 }
             } catch (_: Throwable) {
@@ -118,6 +124,14 @@ class AodPreferencesRepository(private val context: Context) {
         quickCache?.getBoolean("auto_aod_only_charging", false)
     }.getOrNull() ?: false
 
+    fun getCachedAccentColor(): AodAccentColor = runCatching {
+        AodAccentColor.fromId(quickCache?.getString("accent_color", null))
+    }.getOrDefault(AodAccentColor.CYAN_ICE)
+
+    fun getCachedTransitionStyle(): AodTransitionStyle = runCatching {
+        AodTransitionStyle.fromId(quickCache?.getString("transition_style", null))
+    }.getOrDefault(AodTransitionStyle.ONE_UI_ZOOM)
+
     suspend fun updateClockStyle(style: AodClockStyle) {
         context.aodDataStore.edit { it[Keys.CLOCK_STYLE] = style.id }
     }
@@ -127,10 +141,12 @@ class AodPreferencesRepository(private val context: Context) {
     }
 
     suspend fun updateAccentColor(accentColor: AodAccentColor) {
+        runCatching { quickCache?.edit()?.putString("accent_color", accentColor.id)?.apply() }
         context.aodDataStore.edit { it[Keys.ACCENT_COLOR] = accentColor.id }
     }
 
     suspend fun applyThemePreset(preset: AodThemePreset) {
+        runCatching { quickCache?.edit()?.putString("accent_color", preset.accent.id)?.apply() }
         context.aodDataStore.edit {
             it[Keys.CLOCK_STYLE] = preset.style.id
             it[Keys.CLOCK_FONT] = preset.font.id
@@ -203,6 +219,7 @@ class AodPreferencesRepository(private val context: Context) {
     }
 
     suspend fun updateTransitionStyle(style: AodTransitionStyle) {
+        runCatching { quickCache?.edit()?.putString("transition_style", style.id)?.apply() }
         context.aodDataStore.edit { it[Keys.TRANSITION_STYLE] = style.id }
     }
 

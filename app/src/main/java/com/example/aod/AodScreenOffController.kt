@@ -161,44 +161,67 @@ object AodScreenOffController {
         acquireCpuHoldWakeLock(appContext, 3000L)
 
         wakeLockRunnable?.let { mainHandler.removeCallbacks(it) }
-        scheduleWakeAttempt(appContext, attempt = 0, delayMs = 120L)
+        scheduleWakeAttempt(appContext, attempt = 0, delayMs = 80L)
     }
+
+    fun prepareWakeFromForegroundAod(context: Context) {
+        val appContext = context.applicationContext
+        cachedAppContext = appContext
+        lastWokeUpFromAodAtMs = System.currentTimeMillis()
+        cancelPendingLaunch(appContext)
+        cancelTriggerNotification(appContext)
+        restoreSystemBrightnessIfNeeded(appContext)
+    }
+
+    fun triggerWakePulseOnly(context: Context) {
+        val appContext = context.applicationContext
+        val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        @Suppress("DEPRECATION")
+        val wakeLock = pm.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                PowerManager.ON_AFTER_RELEASE,
+            "AlwaysOn:WakeToLockScreen"
+        ).apply {
+            setReferenceCounted(false)
+        }
+        try {
+            wakeLock.acquire(800L)
+            mainHandler.postDelayed({
+                try {
+                    if (wakeLock.isHeld) wakeLock.release()
+                } catch (_: Exception) {
+                    // Ignored
+                }
+            }, 350L)
+        } catch (_: Exception) {
+            // Ignored if restricted
+        }
+    }
+
+    fun createWakeHandoverIntent(context: Context): Intent =
+        Intent(context.applicationContext, AodWakeScreenActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            )
+        }
 
     private fun scheduleWakeAttempt(appContext: Context, attempt: Int, delayMs: Long) {
         val runnable = Runnable {
             val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
             if (pm != null && pm.isInteractive) {
-                if (attempt < 3) {
-                    scheduleWakeAttempt(appContext, attempt + 1, 75L)
+                if (attempt < 4) {
+                    scheduleWakeAttempt(appContext, attempt + 1, 50L)
                 } else {
                     releaseCpuHoldWakeLock()
                 }
                 return@Runnable
             }
             try {
-                if (pm != null) {
-                    @Suppress("DEPRECATION")
-                    val wakeLock = pm.newWakeLock(
-                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                            PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                            PowerManager.ON_AFTER_RELEASE,
-                        "AlwaysOn:WakeToLockScreen"
-                    ).apply {
-                        setReferenceCounted(false)
-                    }
-                    try {
-                        wakeLock.acquire(800L)
-                        mainHandler.postDelayed({
-                            try {
-                                if (wakeLock.isHeld) wakeLock.release()
-                            } catch (_: Exception) {
-                                // Ignored
-                            }
-                        }, 350L)
-                    } catch (_: Exception) {
-                        // Ignored if restricted
-                    }
-                }
+                triggerWakePulseOnly(appContext)
                 launchAodWakeHandover(appContext)
             } finally {
                 releaseCpuHoldWakeLock()
@@ -209,14 +232,7 @@ object AodScreenOffController {
     }
 
     private fun launchAodWakeHandover(appContext: Context) {
-        val wakeIntent = Intent(appContext, AodWakeScreenActivity::class.java).apply {
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
-            )
-        }
+        val wakeIntent = createWakeHandoverIntent(appContext)
 
         var launched = false
         if (Settings.canDrawOverlays(appContext) || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
