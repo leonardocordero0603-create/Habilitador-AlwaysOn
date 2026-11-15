@@ -90,9 +90,7 @@ class ExampleRobolectricTest {
                     onToggleShowMusicControls = {},
                     onSelectTransitionStyle = {},
                     onCustomLabelChange = {},
-                    onLaunchPreviewFullscreen = {},
-                    onUnlockPro = {},
-                    onRestorePurchases = {}
+                    onLaunchPreviewFullscreen = {}
                 )
             }
         }

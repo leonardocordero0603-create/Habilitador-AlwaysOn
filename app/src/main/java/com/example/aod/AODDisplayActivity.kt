@@ -69,6 +69,7 @@ class AODDisplayActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_STARTED_AUTO_CHARGING = "com.example.aod.EXTRA_STARTED_AUTO_CHARGING"
+        const val EXTRA_REQUIRE_KEYGUARD_LOCKED = "com.example.aod.EXTRA_REQUIRE_KEYGUARD_LOCKED"
 
         @Volatile
         var isCurrentlyVisible: Boolean = false
@@ -116,6 +117,13 @@ class AODDisplayActivity : ComponentActivity() {
         }
         createdAtMs = System.currentTimeMillis()
         isFinishingSmartly = false
+        val requireKeyguardLocked = intent?.getBooleanExtra(EXTRA_REQUIRE_KEYGUARD_LOCKED, false) == true
+        if (requireKeyguardLocked && isKeyguardSecure() && !isKeyguardCurrentlyLocked()) {
+            isFinishingSmartly = true
+            finishAndRemoveTask()
+            disableSystemTransition()
+            return
+        }
         startedInAutoChargingMode = intent?.getBooleanExtra(EXTRA_STARTED_AUTO_CHARGING, false) == true
         exitPhase = AodExitPhase.NONE
         observedKeyguardLocked = isKeyguardCurrentlyLocked()
@@ -241,6 +249,11 @@ class AODDisplayActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        val requireKeyguardLocked = intent.getBooleanExtra(EXTRA_REQUIRE_KEYGUARD_LOCKED, false)
+        if (requireKeyguardLocked && isKeyguardSecure() && !isKeyguardCurrentlyLocked()) {
+            finishCleanly()
+            return
+        }
         createdAtMs = System.currentTimeMillis()
         isFinishingSmartly = false
         startedInAutoChargingMode = intent.getBooleanExtra(EXTRA_STARTED_AUTO_CHARGING, false)
@@ -303,6 +316,15 @@ class AODDisplayActivity : ComponentActivity() {
         return try {
             val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
             km?.isKeyguardLocked == true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun isKeyguardSecure(): Boolean {
+        return try {
+            val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            km?.isKeyguardSecure == true || km?.isDeviceSecure == true
         } catch (_: Throwable) {
             false
         }

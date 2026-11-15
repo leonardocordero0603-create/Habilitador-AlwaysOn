@@ -1,6 +1,7 @@
 package com.example.aod
 
 import android.app.ActivityOptions
+import android.app.AlarmManager
 import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -15,11 +16,13 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.example.R
 import com.example.data.AodPreferencesRepository
 import com.example.model.AodPreferences
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,11 +32,30 @@ import kotlinx.coroutines.launch
 /**
  * Shared silent screen-off & charging detector used by both AodNotificationListenerService
  * (zero notification, persistent system binding) and AODAutoService without ongoing notifications.
+ *
+ * Crucial behavior: When the screen turns off automatically due to screen timeout, Android does not
+ * lock the Keyguard immediately; it waits for Settings.Secure "lock_screen_lock_after_timeout"
+ * (default 5s on One UI / AOSP). Launching AODDisplayActivity before the Keyguard locks wakes the
+ * screen (FLAG_KEEP_SCREEN_ON / setTurnScreenOn) and cancels Android's delayed lock timer.
+ * This controller therefore strictly waits until KeyguardManager.isKeyguardLocked is true before
+ * activating AOD on any secured device.
  */
 object AodScreenOffController {
 
     const val CHANNEL_TRIGGER_ID = "aod_trigger_channel"
     const val TRIGGER_NOTIFICATION_ID = 2002
+    const val EXTRA_LOCK_WAIT_SESSION_ID = "com.example.aod.EXTRA_LOCK_WAIT_SESSION_ID"
+    private const val ACTION_LOCK_CHECK_ALARM = "com.example.aod.ACTION_LOCK_CHECK_ALARM"
+    private const val ALARM_REQUEST_CODE = 2009
+
+    private const val INITIAL_CHECK_DELAY_MS = 850L
+    private const val SWIPE_OR_NONE_GRACE_MS = 2200L
+    private const val LOCK_SETTLE_DELAY_MS = 300L
+    private const val POLL_INTERVAL_FAST_MS = 350L
+    private const val POLL_INTERVAL_COARSE_MS = 1000L
+    private const val SHORT_WAIT_WAKELOCK_LIMIT_MS = 65_000L
+    private const val MAX_ALARM_WAIT_MS = 35L * 60_000L
+
     private const val PREFS_BRIGHTNESS_BACKUP = "aod_brightness_backup"
     private const val KEY_HAS_BACKUP = "has_backup"
     private const val KEY_SAVED_BRIGHTNESS = "saved_brightness"
@@ -42,10 +64,14 @@ object AodScreenOffController {
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val activeSessionId = AtomicLong(0L)
 
     @Volatile
     var isListening: Boolean = false
         private set
+
+    @Volatile
+    private var cachedAppContext: Context? = null
 
     @Volatile
     private var currentPrefs: AodPreferences = AodPreferences()
@@ -74,6 +100,21 @@ object AodScreenOffController {
     @Volatile
     private var pendingLaunchIsPowerConnect: Boolean = false
 
+    @Volatile
+    private var waitStartedElapsedMs: Long = 0L
+
+    @Volatile
+    private var waitConfiguredLockTimeoutMs: Long = -1L
+
+    @Volatile
+    private var waitStartedAutoCharging: Boolean = false
+
+    @Volatile
+    private var waitAllowInteractiveWhileLocked: Boolean = false
+
+    @Volatile
+    private var sawUnlockedDuringWait: Boolean = false
+
     private var screenReceiver: BroadcastReceiver? = null
     private var prefsJob: Job? = null
     private var pendingLaunchRunnable: Runnable? = null
@@ -90,13 +131,34 @@ object AodScreenOffController {
         cancelPendingLaunch()
     }
 
+    fun onLockWaitAlarm(context: Context, sessionId: Long) {
+        val appContext = context.applicationContext
+        cachedAppContext = appContext
+        if (sessionId <= 0L || sessionId != activeSessionId.get()) {
+            return
+        }
+        if (!isListening || !isAutoAodEnabled(appContext) || AODDisplayActivity.isCurrentlyVisible) {
+            cancelPendingLaunch(appContext)
+            return
+        }
+        acquireCpuHoldWakeLock(appContext, 5000L)
+        mainHandler.post {
+            evaluateLockAndMaybeLaunch(
+                appContext = appContext,
+                sessionId = sessionId,
+                isSettleFollowUp = false
+            )
+        }
+    }
+
     fun wakeLockScreenFromAod(context: Context) {
         val appContext = context.applicationContext
+        cachedAppContext = appContext
         lastWokeUpFromAodAtMs = System.currentTimeMillis()
-        cancelPendingLaunch()
+        cancelPendingLaunch(appContext)
         cancelTriggerNotification(appContext)
         restoreSystemBrightnessIfNeeded(appContext)
-        acquireCpuHoldWakeLock(appContext)
+        acquireCpuHoldWakeLock(appContext, 3000L)
 
         wakeLockRunnable?.let { mainHandler.removeCallbacks(it) }
         val runnable = Runnable {
@@ -189,6 +251,7 @@ object AodScreenOffController {
 
     fun start(context: Context) {
         val appContext = context.applicationContext
+        cachedAppContext = appContext
         val repo = AodPreferencesRepository(appContext)
         if (cachedAutoEnabled == null) {
             cachedAutoEnabled = repo.getCachedAutoAodEnabled()
@@ -232,7 +295,7 @@ object AodScreenOffController {
                                 (now - lastPowerConnectedAtMs < 3000L) &&
                                 isKeyguardLocked(appContext)
                             if (!isChargerWakeWhileLocked) {
-                                cancelPendingLaunch()
+                                cancelPendingLaunch(appContext)
                             }
                             if (!AODDisplayActivity.isCurrentlyVisible) {
                                 restoreSystemBrightnessIfNeeded(appContext)
@@ -249,7 +312,7 @@ object AodScreenOffController {
                         }
                         Intent.ACTION_POWER_DISCONNECTED -> {
                             if (pendingLaunchIsPowerConnect) {
-                                cancelPendingLaunch()
+                                cancelPendingLaunch(appContext)
                             }
                         }
                     }
@@ -286,9 +349,10 @@ object AodScreenOffController {
 
     fun stop(context: Context) {
         val appContext = context.applicationContext
+        cachedAppContext = appContext
         synchronized(lock) {
             isListening = false
-            cancelPendingLaunch()
+            cancelPendingLaunch(appContext)
             wakeLockRunnable?.let { mainHandler.removeCallbacks(it) }
             wakeLockRunnable = null
             screenReceiver?.let {
@@ -320,8 +384,50 @@ object AodScreenOffController {
     }
 
     private fun isKeyguardLocked(appContext: Context): Boolean {
-        val km = appContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-        return km?.isKeyguardLocked == true
+        return try {
+            val km = appContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            km?.isKeyguardLocked == true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun isKeyguardSecure(appContext: Context): Boolean {
+        return try {
+            val km = appContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+            km?.isKeyguardSecure == true || km?.isDeviceSecure == true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun readLockAfterTimeoutMs(appContext: Context): Long {
+        return try {
+            Settings.Secure.getLong(
+                appContext.contentResolver,
+                "lock_screen_lock_after_timeout",
+                -1L
+            )
+        } catch (_: Throwable) {
+            -1L
+        }
+    }
+
+    private fun startLockWaitSession(
+        appContext: Context,
+        isPowerConnect: Boolean,
+        startedAutoCharging: Boolean,
+        allowInteractiveWhileLocked: Boolean
+    ): Long {
+        cancelPendingLaunch(appContext)
+        val sessionId = activeSessionId.incrementAndGet()
+        pendingLaunchIsPowerConnect = isPowerConnect
+        waitStartedElapsedMs = SystemClock.elapsedRealtime()
+        waitConfiguredLockTimeoutMs = readLockAfterTimeoutMs(appContext)
+        waitStartedAutoCharging = startedAutoCharging
+        waitAllowInteractiveWhileLocked = allowInteractiveWhileLocked
+        sawUnlockedDuringWait = false
+        return sessionId
     }
 
     private fun scheduleAodOnScreenOff(appContext: Context) {
@@ -346,28 +452,24 @@ object AodScreenOffController {
             return
         }
 
-        cancelPendingLaunch()
-        pendingLaunchIsPowerConnect = false
-        acquireCpuHoldWakeLock(appContext)
+        val sessionId = startLockWaitSession(
+            appContext = appContext,
+            isPowerConnect = false,
+            startedAutoCharging = onlyCharging,
+            allowInteractiveWhileLocked = false
+        )
+        acquireCpuHoldWakeLock(appContext, 3000L)
 
         val runnable = Runnable {
-            try {
-                val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
-                if (pm?.isInteractive == true || AODDisplayActivity.isCurrentlyVisible) {
-                    return@Runnable
-                }
-                val stillOnlyCharging = isOnlyChargingMode(appContext)
-                if (stillOnlyCharging && !isDeviceCharging(appContext)) {
-                    return@Runnable
-                }
-                launchAodOverLockScreen(appContext, startedAutoCharging = stillOnlyCharging)
-            } finally {
-                releaseCpuHoldWakeLock()
-            }
+            evaluateLockAndMaybeLaunch(
+                appContext = appContext,
+                sessionId = sessionId,
+                isSettleFollowUp = false
+            )
         }
         pendingLaunchRunnable = runnable
-        // Wait 850ms so One UI / Android finishes locking the Keyguard and turning off the screen cleanly first
-        mainHandler.postDelayed(runnable, 850L)
+        // Initial 850ms settle covers Power-button instant lock & screen-off animation cleanly
+        mainHandler.postDelayed(runnable, INITIAL_CHECK_DELAY_MS)
     }
 
     private fun scheduleAodOnPowerConnected(appContext: Context) {
@@ -391,40 +493,229 @@ object AodScreenOffController {
             return
         }
 
-        cancelPendingLaunch()
-        pendingLaunchIsPowerConnect = true
-        acquireCpuHoldWakeLock(appContext)
+        val sessionId = startLockWaitSession(
+            appContext = appContext,
+            isPowerConnect = true,
+            startedAutoCharging = true,
+            allowInteractiveWhileLocked = true
+        )
+        acquireCpuHoldWakeLock(appContext, 6500L)
 
         val runnable = Runnable {
-            try {
-                if (!isAutoAodEnabled(appContext) || !isOnlyChargingMode(appContext)) {
-                    return@Runnable
-                }
-                if (AODDisplayActivity.isCurrentlyVisible || !isDeviceCharging(appContext)) {
-                    return@Runnable
-                }
-                val currentPm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
-                val interactiveNow = currentPm?.isInteractive == true
-                val lockedNow = isKeyguardLocked(appContext)
-                if (interactiveNow && !lockedNow) {
-                    return@Runnable
-                }
-                val canDirectStart = Settings.canDrawOverlays(appContext) ||
-                    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
-                if (interactiveNow && !canDirectStart) {
-                    return@Runnable
-                }
-                launchAodOverLockScreen(appContext, startedAutoCharging = true)
-            } finally {
-                pendingLaunchIsPowerConnect = false
-                releaseCpuHoldWakeLock()
-            }
+            evaluateLockAndMaybeLaunch(
+                appContext = appContext,
+                sessionId = sessionId,
+                isSettleFollowUp = false
+            )
         }
         pendingLaunchRunnable = runnable
         mainHandler.postDelayed(runnable, 4800L)
     }
 
-    private fun launchAodOverLockScreen(appContext: Context, startedAutoCharging: Boolean) {
+    private fun evaluateLockAndMaybeLaunch(
+        appContext: Context,
+        sessionId: Long,
+        isSettleFollowUp: Boolean
+    ) {
+        if (sessionId != activeSessionId.get()) {
+            return
+        }
+        if (!isAutoAodEnabled(appContext) || AODDisplayActivity.isCurrentlyVisible) {
+            cancelPendingLaunch(appContext)
+            return
+        }
+
+        val onlyCharging = isOnlyChargingMode(appContext)
+        if (waitStartedAutoCharging && !onlyCharging) {
+            // Mode changed to always; still respect charging=false only if started solely for power-connect while interactive
+            if (pendingLaunchIsPowerConnect) {
+                cancelPendingLaunch(appContext)
+                return
+            }
+        }
+        if (onlyCharging && !isDeviceCharging(appContext)) {
+            cancelPendingLaunch(appContext)
+            return
+        }
+
+        val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val interactiveNow = pm?.isInteractive == true
+        val lockedNow = isKeyguardLocked(appContext)
+        val secureNow = isKeyguardSecure(appContext)
+
+        if (interactiveNow) {
+            val canDirectStart = Settings.canDrawOverlays(appContext) ||
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+            val canLaunchInteractiveChargingPill = waitAllowInteractiveWhileLocked &&
+                lockedNow &&
+                canDirectStart
+            if (!canLaunchInteractiveChargingPill) {
+                cancelPendingLaunch(appContext)
+                return
+            }
+        } else {
+            // Once screen is off, require non-interactive + locked cleanly
+            waitAllowInteractiveWhileLocked = false
+        }
+
+        if (lockedNow) {
+            if (sawUnlockedDuringWait && !isSettleFollowUp && !interactiveNow) {
+                // Delayed lock just engaged; wait 300ms for Keyguard / One UI lock screen to settle
+                acquireCpuHoldWakeLock(appContext, 2000L)
+                scheduleNextHandlerCheck(appContext, sessionId, LOCK_SETTLE_DELAY_MS, isSettleFollowUp = true)
+                return
+            }
+
+            val autoCharging = waitStartedAutoCharging || onlyCharging
+            cancelPendingLaunch(appContext)
+            launchAodOverLockScreen(
+                appContext = appContext,
+                startedAutoCharging = autoCharging,
+                requireKeyguardLocked = secureNow || lockedNow
+            )
+            return
+        }
+
+        // Not locked yet (lockedNow == false)
+        sawUnlockedDuringWait = true
+        val elapsedMs = (SystemClock.elapsedRealtime() - waitStartedElapsedMs).coerceAtLeast(0L)
+
+        if (!secureNow) {
+            // Device uses either Swipe (locks shortly after screen off) or None (never locks).
+            if (elapsedMs < SWIPE_OR_NONE_GRACE_MS) {
+                acquireCpuHoldWakeLock(appContext, 3000L)
+                scheduleNextHandlerCheck(appContext, sessionId, POLL_INTERVAL_FAST_MS, isSettleFollowUp = false)
+            } else {
+                // Lock screen is set to "None"; safe to launch AOD without blocking any lock.
+                val autoCharging = waitStartedAutoCharging || onlyCharging
+                cancelPendingLaunch(appContext)
+                launchAodOverLockScreen(
+                    appContext = appContext,
+                    startedAutoCharging = autoCharging,
+                    requireKeyguardLocked = false
+                )
+            }
+            return
+        }
+
+        // Device IS secured (PIN / Pattern / Password / Biometrics) and is NOT locked yet.
+        // We MUST NOT wake the screen or launch AOD until isKeyguardLocked becomes true.
+        val configuredTimeout = waitConfiguredLockTimeoutMs
+        val timeoutKnownLong = configuredTimeout > SHORT_WAIT_WAKELOCK_LIMIT_MS
+        val exceededShortWait = elapsedMs >= SHORT_WAIT_WAKELOCK_LIMIT_MS
+
+        if (timeoutKnownLong || exceededShortWait) {
+            if (elapsedMs >= MAX_ALARM_WAIT_MS) {
+                cancelPendingLaunch(appContext)
+                return
+            }
+            // Hand off to AlarmManager so CPU can deep-sleep cleanly with zero battery drain
+            releaseCpuHoldWakeLock()
+            val delayMs = if (configuredTimeout > elapsedMs) {
+                (configuredTimeout - elapsedMs + LOCK_SETTLE_DELAY_MS).coerceIn(1000L, MAX_ALARM_WAIT_MS)
+            } else {
+                15_000L
+            }
+            scheduleLockCheckAlarm(appContext, sessionId, delayMs)
+            return
+        }
+
+        // Short-wait window (covers 5s / 15s / 30s / 60s auto-lock timers accurately)
+        val remainingBudgetMs = if (configuredTimeout in 1L..SHORT_WAIT_WAKELOCK_LIMIT_MS) {
+            (configuredTimeout - elapsedMs + 6000L).coerceIn(3000L, 70_000L)
+        } else {
+            (SHORT_WAIT_WAKELOCK_LIMIT_MS - elapsedMs + 5000L).coerceIn(3000L, 70_000L)
+        }
+        acquireCpuHoldWakeLock(appContext, remainingBudgetMs)
+
+        val nextPollDelayMs = if (configuredTimeout > 1500L && elapsedMs < configuredTimeout - 800L) {
+            ((configuredTimeout - elapsedMs) - 400L).coerceIn(POLL_INTERVAL_FAST_MS, POLL_INTERVAL_COARSE_MS)
+        } else {
+            POLL_INTERVAL_FAST_MS
+        }
+        scheduleNextHandlerCheck(appContext, sessionId, nextPollDelayMs, isSettleFollowUp = false)
+    }
+
+    private fun scheduleNextHandlerCheck(
+        appContext: Context,
+        sessionId: Long,
+        delayMs: Long,
+        isSettleFollowUp: Boolean
+    ) {
+        pendingLaunchRunnable?.let { mainHandler.removeCallbacks(it) }
+        val runnable = Runnable {
+            evaluateLockAndMaybeLaunch(
+                appContext = appContext,
+                sessionId = sessionId,
+                isSettleFollowUp = isSettleFollowUp
+            )
+        }
+        pendingLaunchRunnable = runnable
+        mainHandler.postDelayed(runnable, delayMs)
+    }
+
+    private fun createLockCheckPendingIntent(
+        appContext: Context,
+        sessionId: Long,
+        flags: Int
+    ): PendingIntent? {
+        val intent = Intent(appContext, AodLockCheckReceiver::class.java).apply {
+            action = ACTION_LOCK_CHECK_ALARM
+            setPackage(appContext.packageName)
+            putExtra(EXTRA_LOCK_WAIT_SESSION_ID, sessionId)
+        }
+        return PendingIntent.getBroadcast(appContext, ALARM_REQUEST_CODE, intent, flags)
+    }
+
+    private fun scheduleLockCheckAlarm(appContext: Context, sessionId: Long, delayMs: Long) {
+        try {
+            val am = appContext.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val pi = createLockCheckPendingIntent(
+                appContext = appContext,
+                sessionId = sessionId,
+                flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            ) ?: return
+            val triggerAt = SystemClock.elapsedRealtime() + delayMs.coerceAtLeast(1000L)
+            val canExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                am.canScheduleExactAlarms()
+            } else {
+                true
+            }
+            if (canExact) {
+                try {
+                    am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+                    return
+                } catch (_: SecurityException) {
+                    // Fallback to inexact allowWhileIdle
+                }
+            }
+            am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi)
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
+    }
+
+    private fun cancelLockCheckAlarm(appContext: Context?) {
+        val ctx = appContext ?: cachedAppContext ?: return
+        try {
+            val am = ctx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val pi = createLockCheckPendingIntent(
+                appContext = ctx,
+                sessionId = 0L,
+                flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            ) ?: return
+            am.cancel(pi)
+            pi.cancel()
+        } catch (_: Throwable) {
+            // Safe fallback
+        }
+    }
+
+    private fun launchAodOverLockScreen(
+        appContext: Context,
+        startedAutoCharging: Boolean,
+        requireKeyguardLocked: Boolean
+    ) {
         val launchIntent = Intent(appContext, AODDisplayActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -433,6 +724,7 @@ object AodScreenOffController {
                     Intent.FLAG_ACTIVITY_NO_USER_ACTION
             )
             putExtra(AODDisplayActivity.EXTRA_STARTED_AUTO_CHARGING, startedAutoCharging)
+            putExtra(AODDisplayActivity.EXTRA_REQUIRE_KEYGUARD_LOCKED, requireKeyguardLocked)
         }
 
         var launched = false
@@ -499,23 +791,32 @@ object AodScreenOffController {
         }
     }
 
-    private fun cancelPendingLaunch() {
+    private fun cancelPendingLaunch(appContext: Context? = cachedAppContext) {
+        activeSessionId.incrementAndGet()
         pendingLaunchRunnable?.let { mainHandler.removeCallbacks(it) }
         pendingLaunchRunnable = null
         pendingLaunchIsPowerConnect = false
+        waitStartedAutoCharging = false
+        waitAllowInteractiveWhileLocked = false
+        sawUnlockedDuringWait = false
+        cancelLockCheckAlarm(appContext)
         releaseCpuHoldWakeLock()
     }
 
-    private fun acquireCpuHoldWakeLock(appContext: Context) {
-        releaseCpuHoldWakeLock()
+    private fun acquireCpuHoldWakeLock(appContext: Context, timeoutMs: Long) {
         try {
-            val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
-            cpuHoldWakeLock = pm?.newWakeLock(
+            val pm = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+            val existing = cpuHoldWakeLock
+            val wl = existing ?: pm.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "AlwaysOn:ScreenOffWait"
-            )?.apply {
-                acquire(3000L)
+            ).apply {
+                setReferenceCounted(false)
+            }.also {
+                cpuHoldWakeLock = it
             }
+            // Re-acquiring a non-reference-counted WakeLock extends its timeout cleanly without dropping it
+            wl.acquire(timeoutMs.coerceIn(1000L, 75_000L))
         } catch (_: Throwable) {
             cpuHoldWakeLock = null
         }
