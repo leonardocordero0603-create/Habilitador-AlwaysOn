@@ -27,6 +27,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -42,7 +45,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -67,6 +71,7 @@ import com.example.model.AodPreferences
 import com.example.ui.theme.AlwaysOnTheme
 import com.example.ui.theme.PlusJakartaSansFontFamily
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 
 class AODDisplayActivity : ComponentActivity() {
 
@@ -101,6 +106,8 @@ class AODDisplayActivity : ComponentActivity() {
     private var startedInAutoChargingMode by mutableStateOf(false)
     private var exitPhase by mutableStateOf(AodExitPhase.NONE)
     private var transitionGeneration by mutableIntStateOf(0)
+    private var hasWindowFocusState by mutableStateOf(false)
+    private var wasScreenOffAtLaunch by mutableStateOf(true)
     private val forceFinishRunnable = Runnable { completeAnimatedExit() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -134,6 +141,8 @@ class AODDisplayActivity : ComponentActivity() {
         }
         startedInAutoChargingMode = intent?.getBooleanExtra(EXTRA_STARTED_AUTO_CHARGING, false) == true
         exitPhase = AodExitPhase.NONE
+        hasWindowFocusState = false
+        wasScreenOffAtLaunch = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive != true
         observedKeyguardLocked = isKeyguardCurrentlyLocked()
         preferencesRepository = AodPreferencesRepository(applicationContext)
 
@@ -178,20 +187,65 @@ class AODDisplayActivity : ComponentActivity() {
 
         val composeView = ComposeView(this).apply {
             setBackgroundColor(AndroidColor.BLACK)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(this@AODDisplayActivity))
             setViewTreeLifecycleOwner(this@AODDisplayActivity)
             setViewTreeSavedStateRegistryOwner(this@AODDisplayActivity)
             setContent {
-                val prefs by preferencesRepository.preferencesFlow.collectAsStateWithLifecycle(
-                    initialValue = AodPreferences(brightnessLevel = preferencesRepository.getCachedBrightness())
+                val loadedPrefs by preferencesRepository.preferencesFlow.collectAsStateWithLifecycle(
+                    initialValue = null
                 )
-                var brightnessRampFraction by remember { mutableFloatStateOf(0f) }
+                val prefs = loadedPrefs ?: remember {
+                    AodPreferences(
+                        brightnessLevel = preferencesRepository.getCachedBrightness(),
+                        accentColor = preferencesRepository.getCachedAccentColor(),
+                        transitionStyle = preferencesRepository.getCachedTransitionStyle()
+                    )
+                }
+                var entryReady by remember(transitionGeneration) { mutableStateOf(false) }
+                val brightnessRampAnim = remember(transitionGeneration) { Animatable(0f) }
+                val brightnessRampFraction = brightnessRampAnim.value.coerceIn(0f, 1f)
 
-                LaunchedEffect(Unit) {
-                    delay(40L)
-                    val steps = 5
-                    for (step in 1..steps) {
-                        brightnessRampFraction = step / steps.toFloat()
-                        if (step < steps) delay(32L)
+                LaunchedEffect(transitionGeneration, loadedPrefs != null) {
+                    if (loadedPrefs == null) {
+                        entryReady = false
+                        brightnessRampAnim.snapTo(0f)
+                        return@LaunchedEffect
+                    }
+                    entryReady = false
+                    brightnessRampAnim.snapTo(0f)
+
+                    val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    var waitedMs = 0L
+                    val maxHardwareWaitMs = if (wasScreenOffAtLaunch) 320L else 120L
+
+                    // Keep the surface pure black at minimum brightness until the physical display
+                    // has powered on and the AOD window has focus, preventing abrupt panel pops.
+                    while (waitedMs < maxHardwareWaitMs) {
+                        val screenInteractive = pm?.isInteractive ?: true
+                        if (screenInteractive && hasWindowFocusState) {
+                            break
+                        }
+                        delay(16L)
+                        waitedMs += 16L
+                    }
+
+                    val postWakeSettleMs = if (wasScreenOffAtLaunch) 110L else 40L
+                    delay(postWakeSettleMs)
+
+                    entryReady = true
+
+                    brightnessRampAnim.animateTo(
+                        targetValue = 1f,
+                        animationSpec = tween(
+                            durationMillis = 560,
+                            easing = CubicBezierEasing(0.42f, 0.0f, 0.20f, 1.0f)
+                        )
+                    )
+                }
+
+                LaunchedEffect(exitPhase, entryReady) {
+                    if (exitPhase != AodExitPhase.NONE && !entryReady) {
+                        completeAnimatedExit()
                     }
                 }
 
@@ -207,6 +261,8 @@ class AODDisplayActivity : ComponentActivity() {
                 AlwaysOnTheme(darkTheme = true) {
                     AodFullscreenScreen(
                         preferences = prefs,
+                        prefsLoaded = loadedPrefs != null,
+                        entryReady = entryReady,
                         brightnessRampFraction = brightnessRampFraction,
                         startedInAutoChargingMode = startedInAutoChargingMode,
                         isExiting = exitPhase != AodExitPhase.NONE,
@@ -270,10 +326,15 @@ class AODDisplayActivity : ComponentActivity() {
         isFinishingSmartly = false
         startedInAutoChargingMode = intent.getBooleanExtra(EXTRA_STARTED_AUTO_CHARGING, false)
         exitPhase = AodExitPhase.NONE
+        wasScreenOffAtLaunch = (getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive != true
+        hasWindowFocusState = hasWindowFocus()
         transitionGeneration += 1
         mainHandler.removeCallbacks(forceFinishRunnable)
         observedKeyguardLocked = observedKeyguardLocked || isKeyguardCurrentlyLocked()
         try {
+            val lp = window.attributes
+            lp.screenBrightness = 0.01f
+            window.attributes = lp
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setShowWhenLocked(true)
@@ -312,7 +373,7 @@ class AODDisplayActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        mainHandler.removeCallbacks(forceFinishRunnable)
+        mainHandler.removeCallbacksAndMessages(null)
         releaseProximityWakeLock()
         AodScreenOffController.restoreSystemBrightnessIfNeeded(applicationContext)
         super.onDestroy()
@@ -320,6 +381,7 @@ class AODDisplayActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        hasWindowFocusState = hasFocus
         if (checkSmartKeyguardUnlock()) return
         if (hasFocus) hideSystemBars()
     }
@@ -415,8 +477,10 @@ class AODDisplayActivity : ComponentActivity() {
                 val clampedTarget = targetBrightness.coerceIn(0.03f, 0.45f)
                 val ramped = 0.01f + (clampedTarget - 0.01f) * brightnessRampFraction.coerceIn(0f, 1f)
                 val updatedLp = window.attributes
-                updatedLp.screenBrightness = ramped
-                window.attributes = updatedLp
+                if (abs(updatedLp.screenBrightness - ramped) > 0.0005f) {
+                    updatedLp.screenBrightness = ramped
+                    window.attributes = updatedLp
+                }
             }
         } catch (_: Throwable) {
             // Safe fallback
@@ -581,6 +645,8 @@ class AODDisplayActivity : ComponentActivity() {
 @Composable
 private fun AodFullscreenScreen(
     preferences: AodPreferences,
+    prefsLoaded: Boolean,
+    entryReady: Boolean,
     brightnessRampFraction: Float,
     startedInAutoChargingMode: Boolean,
     isExiting: Boolean,
@@ -600,7 +666,7 @@ private fun AodFullscreenScreen(
     var batteryPercent by remember { mutableStateOf<Int?>(null) }
     var isCharging by remember { mutableStateOf(false) }
     var wasChargingDuringSession by remember { mutableStateOf(false) }
-    var showHint by remember { mutableStateOf(true) }
+    var showHint by remember(transitionGeneration) { mutableStateOf(false) }
     var isPocketCovered by remember { mutableStateOf(false) }
     val latestOnlyCharging by androidx.compose.runtime.rememberUpdatedState(preferences.autoAodOnlyCharging)
     val latestAutoAodEnabled by androidx.compose.runtime.rememberUpdatedState(preferences.autoAodOnScreenOff)
@@ -752,7 +818,16 @@ private fun AodFullscreenScreen(
         }
     }
 
-    LaunchedEffect(showHint) {
+    LaunchedEffect(entryReady, transitionGeneration) {
+        if (entryReady) {
+            delay(220L)
+            showHint = true
+        } else {
+            showHint = false
+        }
+    }
+
+    LaunchedEffect(showHint, transitionGeneration) {
         if (showHint) {
             delay(3500)
             showHint = false
@@ -770,33 +845,35 @@ private fun AodFullscreenScreen(
                 )
             }
     ) {
-        if (!isPocketCovered) {
-            AodTransitionContainer(
-                visible = !isExiting,
-                transitionStyle = preferences.transitionStyle,
-                accentColor = preferences.accentColor.color,
-                replayTrigger = transitionGeneration,
-                animateOnInitialShow = true,
-                exitDurationMs = exitDurationMs,
-                onExitAnimationFinished = onExitAnimationFinished,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                AodClockCanvas(
-                    preferences = preferences,
-                    batteryPercent = batteryPercent,
-                    isCharging = isCharging,
-                    isPreview = false,
-                    notifications = notifications,
-                    samsungMusic = samsungMusic,
-                    onMusicPrevious = AodLiveStateHolder::skipToPrevious,
-                    onMusicPlayPause = AodLiveStateHolder::togglePlayPause,
-                    onMusicNext = AodLiveStateHolder::skipToNext
-                )
+        if (!isPocketCovered && prefsLoaded) {
+            key(transitionGeneration) {
+                AodTransitionContainer(
+                    visible = entryReady && !isExiting,
+                    transitionStyle = preferences.transitionStyle,
+                    accentColor = preferences.accentColor.color,
+                    replayTrigger = transitionGeneration,
+                    animateOnInitialShow = true,
+                    exitDurationMs = exitDurationMs,
+                    onExitAnimationFinished = onExitAnimationFinished,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    AodClockCanvas(
+                        preferences = preferences,
+                        batteryPercent = batteryPercent,
+                        isCharging = isCharging,
+                        isPreview = false,
+                        notifications = notifications,
+                        samsungMusic = samsungMusic,
+                        onMusicPrevious = AodLiveStateHolder::skipToPrevious,
+                        onMusicPlayPause = AodLiveStateHolder::togglePlayPause,
+                        onMusicNext = AodLiveStateHolder::skipToNext
+                    )
+                }
             }
 
             AnimatedVisibility(
-                visible = showHint && !isExiting,
-                enter = fadeIn(tween(450)),
+                visible = entryReady && showHint && !isExiting,
+                enter = fadeIn(tween(550, easing = LinearOutSlowInEasing)),
                 exit = fadeOut(tween(240)),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)

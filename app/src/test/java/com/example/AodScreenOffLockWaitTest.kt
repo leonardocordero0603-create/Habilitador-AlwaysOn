@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -203,6 +204,32 @@ class AodScreenOffLockWaitTest {
         val started = Shadows.shadowOf(app).nextStartedActivity
         assertNotNull("Expected AodWakeScreenActivity to launch promptly after 120ms sleep settle", started)
         assertEquals(com.example.aod.AodWakeScreenActivity::class.java.name, started?.component?.className)
+    }
+
+    @Test
+    fun `AODDisplayActivity starts at minimum brightness and handles onNewIntent without premature exit`() {
+        shadowPm.setIsInteractive(false)
+        shadowKm.setIsKeyguardSecure(true)
+        shadowKm.setKeyguardLocked(true)
+
+        val controller = Robolectric.buildActivity(AODDisplayActivity::class.java).setup()
+        val activity = controller.get()
+        assertEquals(0.01f, activity.window.attributes.screenBrightness, 0.005f)
+        assertFalse(activity.isFinishing)
+
+        // Simulate display wake + window focus + reuse via onNewIntent
+        shadowPm.setIsInteractive(true)
+        activity.onWindowFocusChanged(true)
+        ShadowLooper.idleMainLooper(1200, TimeUnit.MILLISECONDS)
+        assertFalse(activity.isFinishing)
+
+        controller.newIntent(Intent(app, AODDisplayActivity::class.java))
+        assertEquals(0.01f, activity.window.attributes.screenBrightness, 0.005f)
+        ShadowLooper.idleMainLooper(900, TimeUnit.MILLISECONDS)
+        assertFalse("Reused AODDisplayActivity must not falsely exit during entry reset", activity.isFinishing)
+
+        controller.pause().stop().destroy()
+        ShadowLooper.idleMainLooper()
     }
 
     @Test

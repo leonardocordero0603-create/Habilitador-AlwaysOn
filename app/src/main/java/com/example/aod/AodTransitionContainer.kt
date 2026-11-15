@@ -1,11 +1,10 @@
 package com.example.aod
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -33,8 +32,12 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.model.AodTransitionStyle
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlin.math.hypot
 import kotlin.math.sin
+
+private val SmoothEntryEasing = CubicBezierEasing(0.36f, 0.0f, 0.16f, 1.0f)
 
 private class CircularRevealShape(private val progress: Float) : Shape {
     override fun createOutline(
@@ -111,33 +114,63 @@ fun AodTransitionContainer(
             glowPulse.snapTo(0f)
             when (currentStyle) {
                 AodTransitionStyle.ONE_UI_ZOOM -> {
-                    glowPulse.animateTo(1f, animationSpec = tween(220, easing = FastOutSlowInEasing))
-                    progress.animateTo(
-                        1f,
-                        animationSpec = spring(
-                            dampingRatio = 0.78f,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
-                    )
-                    glowPulse.animateTo(0f, animationSpec = tween(260, easing = LinearOutSlowInEasing))
+                    coroutineScope {
+                        launch {
+                            progress.animateTo(
+                                1f,
+                                animationSpec = tween(620, easing = SmoothEntryEasing)
+                            )
+                        }
+                        launch {
+                            glowPulse.animateTo(1f, animationSpec = tween(260, easing = FastOutSlowInEasing))
+                            glowPulse.animateTo(0f, animationSpec = tween(360, easing = LinearOutSlowInEasing))
+                        }
+                    }
                 }
                 AodTransitionStyle.WONDERLAND_HALO -> {
-                    glowPulse.animateTo(1f, animationSpec = tween(240, easing = FastOutSlowInEasing))
-                    progress.animateTo(1f, animationSpec = tween(480, easing = FastOutSlowInEasing))
-                    glowPulse.animateTo(0f, animationSpec = tween(320, easing = LinearOutSlowInEasing))
+                    coroutineScope {
+                        launch {
+                            progress.animateTo(
+                                1f,
+                                animationSpec = tween(650, easing = SmoothEntryEasing)
+                            )
+                        }
+                        launch {
+                            glowPulse.animateTo(1f, animationSpec = tween(280, easing = FastOutSlowInEasing))
+                            glowPulse.animateTo(0f, animationSpec = tween(370, easing = LinearOutSlowInEasing))
+                        }
+                    }
                 }
                 AodTransitionStyle.IRIS_PORTAL -> {
-                    glowPulse.snapTo(1f)
-                    progress.animateTo(1f, animationSpec = tween(460, easing = FastOutSlowInEasing))
-                    glowPulse.animateTo(0f, animationSpec = tween(200, easing = LinearOutSlowInEasing))
+                    coroutineScope {
+                        launch {
+                            progress.animateTo(
+                                1f,
+                                animationSpec = tween(600, easing = SmoothEntryEasing)
+                            )
+                        }
+                        launch {
+                            glowPulse.animateTo(1f, animationSpec = tween(240, easing = FastOutSlowInEasing))
+                            glowPulse.animateTo(0f, animationSpec = tween(360, easing = LinearOutSlowInEasing))
+                        }
+                    }
                 }
                 AodTransitionStyle.CURTAIN_SWEEP -> {
-                    glowPulse.snapTo(1f)
-                    progress.animateTo(1f, animationSpec = tween(470, easing = FastOutSlowInEasing))
-                    glowPulse.animateTo(0f, animationSpec = tween(180, easing = LinearOutSlowInEasing))
+                    coroutineScope {
+                        launch {
+                            progress.animateTo(
+                                1f,
+                                animationSpec = tween(600, easing = SmoothEntryEasing)
+                            )
+                        }
+                        launch {
+                            glowPulse.animateTo(1f, animationSpec = tween(240, easing = FastOutSlowInEasing))
+                            glowPulse.animateTo(0f, animationSpec = tween(360, easing = LinearOutSlowInEasing))
+                        }
+                    }
                 }
                 AodTransitionStyle.SOFT_FADE -> {
-                    progress.animateTo(1f, animationSpec = tween(400, easing = FastOutSlowInEasing))
+                    progress.animateTo(1f, animationSpec = tween(580, easing = SmoothEntryEasing))
                 }
             }
         } else if (hasBeenVisible) {
@@ -182,12 +215,12 @@ fun AodTransitionContainer(
                     .fillMaxSize()
                     .graphicsLayer {
                         val scale = if (visible) {
-                            0.84f + 0.16f * p
+                            0.89f + 0.11f * pClamped
                         } else {
                             1.12f - 0.12f * pClamped
                         }
                         val shiftDp = if (visible) {
-                            (1f - p) * 28.dp.toPx()
+                            (1f - pClamped) * 18.dp.toPx()
                         } else {
                             -(1f - pClamped) * 34.dp.toPx()
                         }
@@ -202,7 +235,7 @@ fun AodTransitionContainer(
                     .fillMaxSize()
                     .graphicsLayer {
                         val scale = if (visible) {
-                            0.90f + 0.10f * pClamped
+                            0.91f + 0.09f * pClamped
                         } else {
                             0.86f + 0.14f * pClamped
                         }
@@ -218,7 +251,7 @@ fun AodTransitionContainer(
                         val scale = 0.94f + 0.06f * pClamped
                         scaleX = scale
                         scaleY = scale
-                        alpha = (pClamped * 1.35f).coerceIn(0f, 1f)
+                        alpha = (pClamped * 1.18f).coerceIn(0f, 1f)
                         clip = true
                         shape = CircularRevealShape(pClamped)
                     }
@@ -228,11 +261,11 @@ fun AodTransitionContainer(
                     .fillMaxSize()
                     .graphicsLayer {
                         translationY = if (visible) {
-                            -(1f - pClamped) * 14.dp.toPx()
+                            -(1f - pClamped) * 12.dp.toPx()
                         } else {
                             -(1f - pClamped) * 18.dp.toPx()
                         }
-                        alpha = (pClamped * 1.25f).coerceIn(0f, 1f)
+                        alpha = (pClamped * 1.16f).coerceIn(0f, 1f)
                         clip = true
                         shape = VerticalCurtainShape(pClamped)
                     }
