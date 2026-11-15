@@ -191,4 +191,25 @@ class AodScreenOffLockWaitTest {
         val controller = Robolectric.buildActivity(AODDisplayActivity::class.java, intent).create()
         assertTrue("Activity must finish immediately if launched while secured and unlocked", controller.get().isFinishing)
     }
+
+    @Test
+    fun `power button wake handover launches AodWakeScreenActivity within 150ms when screen is off`() {
+        shadowPm.setIsInteractive(false)
+        AodScreenOffController.wakeLockScreenFromAod(app)
+
+        ShadowLooper.idleMainLooper(150, TimeUnit.MILLISECONDS)
+        val started = Shadows.shadowOf(app).nextStartedActivity
+        assertNotNull("Expected AodWakeScreenActivity to launch promptly after 120ms sleep settle", started)
+        assertEquals(com.example.aod.AodWakeScreenActivity::class.java.name, started?.component?.className)
+    }
+
+    @Test
+    fun `AodWakeScreenActivity completes reveal and finishes cleanly within 700ms`() {
+        shadowPm.setIsInteractive(true)
+        val controller = Robolectric.buildActivity(com.example.aod.AodWakeScreenActivity::class.java).setup()
+        val activity = controller.get()
+
+        ShadowLooper.idleMainLooper(700, TimeUnit.MILLISECONDS)
+        assertTrue("AodWakeScreenActivity must finish cleanly after veil fade-out", activity.isFinishing)
+    }
 }

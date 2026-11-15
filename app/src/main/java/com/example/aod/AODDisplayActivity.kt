@@ -477,7 +477,11 @@ class AODDisplayActivity : ComponentActivity() {
             finishCleanly()
             return
         }
-        beginAnimatedExit(AodExitPhase.POWER_PRESS)
+        exitPhase = AodExitPhase.POWER_PRESS
+        releaseProximityWakeLock()
+        clearLockScreenWindowFlags()
+        AodScreenOffController.wakeLockScreenFromAod(applicationContext)
+        finishCleanly()
     }
 
     private fun finishUnlockedSmartly() {
