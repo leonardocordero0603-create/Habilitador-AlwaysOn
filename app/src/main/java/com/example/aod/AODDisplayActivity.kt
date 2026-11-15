@@ -81,6 +81,11 @@ class AODDisplayActivity : ComponentActivity() {
         @Volatile
         var lastPausedAtMs: Long = 0L
             private set
+
+        internal fun resetTestState() {
+            isCurrentlyVisible = false
+            lastPausedAtMs = 0L
+        }
     }
 
     private enum class AodExitPhase { NONE, DOUBLE_TAP, UNLOCK, DISCONNECT, POWER_PRESS }

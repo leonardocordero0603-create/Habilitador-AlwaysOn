@@ -121,6 +121,17 @@ object AodScreenOffController {
     private var wakeLockRunnable: Runnable? = null
     private var cpuHoldWakeLock: PowerManager.WakeLock? = null
 
+    internal fun resetForTesting() {
+        cachedAutoEnabled = null
+        cachedOnlyCharging = null
+        lastUnlockedAtMs = 0L
+        lastWokeUpFromAodAtMs = 0L
+        lastScreenOnAtMs = 0L
+        lastScreenOffAtMs = 0L
+        lastPowerConnectedAtMs = 0L
+        activeSessionId.incrementAndGet()
+    }
+
     fun setOnlyChargingMode(enabled: Boolean) {
         cachedOnlyCharging = enabled
         currentPrefs = currentPrefs.copy(autoAodOnlyCharging = enabled)
@@ -277,12 +288,8 @@ object AodScreenOffController {
         val appContext = context.applicationContext
         cachedAppContext = appContext
         val repo = AodPreferencesRepository(appContext)
-        if (cachedAutoEnabled == null) {
-            cachedAutoEnabled = repo.getCachedAutoAodEnabled()
-        }
-        if (cachedOnlyCharging == null) {
-            cachedOnlyCharging = repo.getCachedAutoAodOnlyCharging()
-        }
+        cachedAutoEnabled = repo.getCachedAutoAodEnabled()
+        cachedOnlyCharging = repo.getCachedAutoAodOnlyCharging()
         synchronized(lock) {
             if (prefsJob == null) {
                 prefsJob = scope.launch(Dispatchers.IO) {

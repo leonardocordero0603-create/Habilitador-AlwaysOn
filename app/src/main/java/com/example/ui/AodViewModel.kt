@@ -10,10 +10,13 @@ import com.example.aod.SamsungAodManager
 import com.example.data.AodPreferencesRepository
 import com.example.model.AodAccentColor
 import com.example.model.AodActionResult
+import com.example.model.AodBackgroundStyle
 import com.example.model.AodClockStyle
+import com.example.model.AodDateStyle
 import com.example.model.AodPreferences
 import com.example.model.AodThemePreset
 import com.example.model.AodTransitionStyle
+import com.example.model.AodVerticalPosition
 import com.example.model.SamsungDeviceStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -342,11 +345,33 @@ class AodViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { prefsRepo.updateAccentColor(color) }
     }
 
+    fun setBackgroundStyle(style: AodBackgroundStyle) {
+        viewModelScope.launch { prefsRepo.updateBackgroundStyle(style) }
+    }
+
+    fun setDateStyle(style: AodDateStyle) {
+        viewModelScope.launch { prefsRepo.updateDateStyle(style) }
+    }
+
+    fun setVerticalPosition(position: AodVerticalPosition) {
+        viewModelScope.launch { prefsRepo.updateVerticalPosition(position) }
+    }
+
+    fun setNeonGlowEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefsRepo.updateNeonGlowEnabled(enabled) }
+    }
+
     fun applyThemePreset(preset: AodThemePreset) {
         viewModelScope.launch {
             prefsRepo.applyThemePreset(preset)
             _feedbackMessage.value = "Tema «${preset.title}» aplicado."
         }
+    }
+
+    fun cycleNextThemePreset() {
+        val current = AodThemePreset.findMatching(uiState.value.preferences)
+        val next = AodThemePreset.nextAfter(current)
+        applyThemePreset(next)
     }
 
     fun setClockScale(scale: Float) {

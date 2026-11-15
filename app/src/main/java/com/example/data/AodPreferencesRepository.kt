@@ -9,11 +9,14 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.model.AodAccentColor
+import com.example.model.AodBackgroundStyle
 import com.example.model.AodClockFont
 import com.example.model.AodClockStyle
+import com.example.model.AodDateStyle
 import com.example.model.AodPreferences
 import com.example.model.AodThemePreset
 import com.example.model.AodTransitionStyle
+import com.example.model.AodVerticalPosition
 import androidx.datastore.preferences.core.emptyPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +33,10 @@ class AodPreferencesRepository(private val context: Context) {
         val CLOCK_STYLE = stringPreferencesKey("clock_style")
         val CLOCK_FONT = stringPreferencesKey("clock_font")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
+        val BACKGROUND_STYLE = stringPreferencesKey("background_style")
+        val DATE_STYLE = stringPreferencesKey("date_style")
+        val VERTICAL_POSITION = stringPreferencesKey("vertical_position")
+        val NEON_GLOW_ENABLED = booleanPreferencesKey("neon_glow_enabled")
         val CLOCK_SCALE = floatPreferencesKey("clock_scale")
         val ALIGN_LEFT = booleanPreferencesKey("align_left")
         val BRIGHTNESS_LEVEL = floatPreferencesKey("brightness_level")
@@ -93,6 +100,10 @@ class AodPreferencesRepository(private val context: Context) {
             clockStyle = AodClockStyle.fromId(prefs[Keys.CLOCK_STYLE]),
             clockFont = AodClockFont.fromId(prefs[Keys.CLOCK_FONT]),
             accentColor = AodAccentColor.fromId(prefs[Keys.ACCENT_COLOR]),
+            backgroundStyle = AodBackgroundStyle.fromId(prefs[Keys.BACKGROUND_STYLE]),
+            dateStyle = AodDateStyle.fromId(prefs[Keys.DATE_STYLE]),
+            verticalPosition = AodVerticalPosition.fromId(prefs[Keys.VERTICAL_POSITION]),
+            neonGlowEnabled = prefs[Keys.NEON_GLOW_ENABLED] ?: false,
             clockScale = (prefs[Keys.CLOCK_SCALE] ?: 1.0f).coerceIn(0.80f, 1.22f),
             alignLeft = prefs[Keys.ALIGN_LEFT] ?: false,
             brightnessLevel = brightness,
@@ -145,12 +156,32 @@ class AodPreferencesRepository(private val context: Context) {
         context.aodDataStore.edit { it[Keys.ACCENT_COLOR] = accentColor.id }
     }
 
+    suspend fun updateBackgroundStyle(style: AodBackgroundStyle) {
+        context.aodDataStore.edit { it[Keys.BACKGROUND_STYLE] = style.id }
+    }
+
+    suspend fun updateDateStyle(style: AodDateStyle) {
+        context.aodDataStore.edit { it[Keys.DATE_STYLE] = style.id }
+    }
+
+    suspend fun updateVerticalPosition(position: AodVerticalPosition) {
+        context.aodDataStore.edit { it[Keys.VERTICAL_POSITION] = position.id }
+    }
+
+    suspend fun updateNeonGlowEnabled(enabled: Boolean) {
+        context.aodDataStore.edit { it[Keys.NEON_GLOW_ENABLED] = enabled }
+    }
+
     suspend fun applyThemePreset(preset: AodThemePreset) {
         runCatching { quickCache?.edit()?.putString("accent_color", preset.accent.id)?.apply() }
         context.aodDataStore.edit {
             it[Keys.CLOCK_STYLE] = preset.style.id
             it[Keys.CLOCK_FONT] = preset.font.id
             it[Keys.ACCENT_COLOR] = preset.accent.id
+            it[Keys.BACKGROUND_STYLE] = preset.background.id
+            it[Keys.DATE_STYLE] = preset.dateStyle.id
+            it[Keys.VERTICAL_POSITION] = preset.verticalPosition.id
+            it[Keys.NEON_GLOW_ENABLED] = preset.neonGlow
             if (preset.style.supportsAlignment) {
                 it[Keys.ALIGN_LEFT] = preset.alignLeft
             }

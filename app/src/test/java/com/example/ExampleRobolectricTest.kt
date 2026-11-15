@@ -1,18 +1,28 @@
 package com.example
 
 import android.content.Context
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.example.aod.AodWakeScreenActivity
 import com.example.aod.SamsungAodManager
 import com.example.model.AodAccentColor
+import com.example.model.AodBackgroundStyle
 import com.example.model.AodClockFont
 import com.example.model.AodClockStyle
+import com.example.model.AodDateStyle
 import com.example.model.AodPreferences
+import com.example.model.AodThemeCategory
 import com.example.model.AodThemePreset
 import com.example.model.AodTransitionStyle
+import com.example.model.AodVerticalPosition
 import com.example.ui.components.QrCodeEncoder
+import com.example.ui.components.ThemeGalleryBottomSheet
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -77,6 +87,10 @@ class ExampleRobolectricTest {
                     onSelectClockStyle = {},
                     onSelectClockFont = {},
                     onSelectAccentColor = {},
+                    onSelectBackgroundStyle = {},
+                    onSelectDateStyle = {},
+                    onSelectVerticalPosition = {},
+                    onToggleNeonGlow = {},
                     onClockScaleChange = {},
                     onToggleAlignLeft = {},
                     onBrightnessChange = {},
@@ -136,18 +150,34 @@ class ExampleRobolectricTest {
 
     @Test
     fun `s23 customization styles fonts and colors resolve cleanly`() {
-        assertEquals(12, AodClockStyle.entries.size)
+        assertEquals(18, AodClockStyle.entries.size)
         assertEquals(6, AodClockFont.entries.size)
-        assertEquals(12, AodAccentColor.entries.size)
-        assertEquals(8, AodThemePreset.entries.size)
+        assertEquals(16, AodAccentColor.entries.size)
+        assertEquals(12, AodThemePreset.entries.size)
         assertEquals(5, AodTransitionStyle.entries.size)
+        assertEquals(6, AodBackgroundStyle.entries.size)
+        assertEquals(5, AodDateStyle.entries.size)
+        assertEquals(3, AodVerticalPosition.entries.size)
         assertEquals(AodClockStyle.TYPOGRAPHIC_BOLD, AodClockStyle.fromId("typographic_bold"))
         assertEquals(AodClockStyle.DOT_MATRIX, AodClockStyle.fromId("dot_matrix"))
         assertEquals(AodClockStyle.ORBIT_CHRONO, AodClockStyle.fromId("orbit_chrono"))
+        assertEquals(AodClockStyle.OUTLINE_NEON, AodClockStyle.fromId("outline_neon"))
+        assertEquals(AodClockStyle.SEGMENT_RETRO, AodClockStyle.fromId("segment_retro"))
+        assertEquals(AodClockStyle.CYBER_HUD, AodClockStyle.fromId("cyber_hud"))
+        assertEquals(AodClockStyle.HORIZON_ARC, AodClockStyle.fromId("horizon_arc"))
+        assertEquals(AodClockStyle.BOLD_SPLIT, AodClockStyle.fromId("bold_split"))
+        assertEquals(AodClockStyle.WORD_ESSENCE, AodClockStyle.fromId("word_essence"))
         assertEquals(AodClockFont.ELEGANT_SERIF, AodClockFont.fromId("elegant_serif"))
         assertEquals(AodClockFont.CYBER_FUTURA, AodClockFont.fromId("cyber_futura"))
         assertEquals(AodAccentColor.PURE_WHITE, AodAccentColor.fromId("pure_white"))
         assertEquals(AodAccentColor.AURORA_MAGENTA, AodAccentColor.fromId("aurora_magenta"))
+        assertEquals(AodAccentColor.ELECTRIC_INDIGO, AodAccentColor.fromId("electric_indigo"))
+        assertEquals(AodAccentColor.ROSE_GOLD, AodAccentColor.fromId("rose_gold"))
+        assertEquals(AodBackgroundStyle.EDGE_GLOW, AodBackgroundStyle.fromId("edge_glow"))
+        assertEquals(AodBackgroundStyle.STARFIELD_MIST, AodBackgroundStyle.fromId("starfield_mist"))
+        assertEquals(AodDateStyle.COMPACT_PILL, AodDateStyle.fromId("compact_pill"))
+        assertEquals(AodDateStyle.WEEK_PROGRESS, AodDateStyle.fromId("week_progress"))
+        assertEquals(AodVerticalPosition.CENTER, AodVerticalPosition.fromId("center"))
         assertEquals(AodTransitionStyle.ONE_UI_ZOOM, AodTransitionStyle.fromId("one_ui_zoom"))
         assertEquals(AodTransitionStyle.WONDERLAND_HALO, AodTransitionStyle.fromId("wonderland_halo"))
         assertEquals(AodTransitionStyle.IRIS_PORTAL, AodTransitionStyle.fromId("iris_portal"))
@@ -159,7 +189,130 @@ class ExampleRobolectricTest {
         assertEquals(1.0f, defaults.clockScale, 0.001f)
         assertEquals(false, defaults.alignLeft)
         assertEquals(AodTransitionStyle.ONE_UI_ZOOM, defaults.transitionStyle)
+        assertEquals(AodBackgroundStyle.PURE_BLACK, defaults.backgroundStyle)
+        assertEquals(AodDateStyle.CLASSIC, defaults.dateStyle)
+        assertEquals(AodVerticalPosition.TOP, defaults.verticalPosition)
+        assertFalse(defaults.neonGlowEnabled)
         assertTrue(AodThemePreset.GALAXY_S23.matches(defaults))
+    }
+
+    @Test
+    fun `render all new clock faces backgrounds and date styles without crash`() {
+        val samplePrefs = listOf(
+            AodPreferences(
+                clockStyle = AodClockStyle.OUTLINE_NEON,
+                backgroundStyle = AodBackgroundStyle.RADIAL_HALO,
+                dateStyle = AodDateStyle.COMPACT_PILL,
+                verticalPosition = AodVerticalPosition.TOP,
+                neonGlowEnabled = true
+            ),
+            AodPreferences(
+                clockStyle = AodClockStyle.SEGMENT_RETRO,
+                backgroundStyle = AodBackgroundStyle.EDGE_GLOW,
+                dateStyle = AodDateStyle.NUMERIC_TECH,
+                verticalPosition = AodVerticalPosition.CENTER,
+                showSeconds = true
+            ),
+            AodPreferences(
+                clockStyle = AodClockStyle.HORIZON_ARC,
+                backgroundStyle = AodBackgroundStyle.STARFIELD_MIST,
+                dateStyle = AodDateStyle.WEEK_PROGRESS,
+                verticalPosition = AodVerticalPosition.CENTER
+            ),
+            AodPreferences(
+                clockStyle = AodClockStyle.CYBER_HUD,
+                backgroundStyle = AodBackgroundStyle.TOP_AURORA,
+                dateStyle = AodDateStyle.WEEKDAY_STACK,
+                verticalPosition = AodVerticalPosition.LOWER,
+                showSeconds = true
+            ),
+            AodPreferences(
+                clockStyle = AodClockStyle.BOLD_SPLIT,
+                backgroundStyle = AodBackgroundStyle.HORIZON_WAVE,
+                dateStyle = AodDateStyle.CLASSIC,
+                verticalPosition = AodVerticalPosition.TOP
+            ),
+            AodPreferences(
+                clockStyle = AodClockStyle.WORD_ESSENCE,
+                backgroundStyle = AodBackgroundStyle.PURE_BLACK,
+                dateStyle = AodDateStyle.COMPACT_PILL,
+                verticalPosition = AodVerticalPosition.CENTER
+            )
+        )
+        composeTestRule.setContent {
+            com.example.ui.theme.AlwaysOnTheme(darkTheme = true) {
+                androidx.compose.foundation.layout.Column {
+                    samplePrefs.forEach { prefs ->
+                        com.example.aod.AodClockCanvas(
+                            preferences = prefs,
+                            batteryPercent = 84,
+                            isCharging = true,
+                            isPreview = true,
+                            modifier = androidx.compose.ui.Modifier.size(180.dp)
+                        )
+                    }
+                }
+            }
+        }
+        composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun `predefined theme selection system resolves cycles and persists cleanly`() {
+        assertEquals(5, AodThemeCategory.entries.size)
+        assertEquals(AodThemePreset.GALAXY_S23, AodThemePreset.findMatching(AodPreferences()))
+        assertEquals(AodThemePreset.CYBER_ORBIT, AodThemePreset.nextAfter(AodThemePreset.GALAXY_S23))
+        assertEquals(AodThemePreset.GALAXY_S23, AodThemePreset.nextAfter(AodThemePreset.entries.last()))
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repo = com.example.data.AodPreferencesRepository(context)
+        kotlinx.coroutines.runBlocking {
+            repo.applyThemePreset(AodThemePreset.CYBER_HUD_PRO)
+            val applied = repo.preferencesFlow.first()
+            assertEquals(AodClockStyle.CYBER_HUD, applied.clockStyle)
+            assertEquals(AodAccentColor.LIME_NEON, applied.accentColor)
+            assertEquals(AodBackgroundStyle.EDGE_GLOW, applied.backgroundStyle)
+            assertEquals(AodDateStyle.NUMERIC_TECH, applied.dateStyle)
+            assertTrue(applied.neonGlowEnabled)
+            assertEquals(AodThemePreset.CYBER_HUD_PRO, AodThemePreset.findMatching(applied))
+
+            // Changing accent color customizes without breaking style
+            repo.updateAccentColor(AodAccentColor.ROSE_GOLD)
+            val customized = repo.preferencesFlow.first()
+            assertEquals(AodClockStyle.CYBER_HUD, customized.clockStyle)
+            assertEquals(AodAccentColor.ROSE_GOLD, customized.accentColor)
+            assertEquals(null, AodThemePreset.findMatching(customized))
+        }
+    }
+
+    @Test
+    fun `theme gallery bottom sheet filters categories and selects preset`() {
+        var appliedPreset: AodThemePreset? = null
+        var appliedColor: AodAccentColor? = null
+        composeTestRule.setContent {
+            com.example.ui.theme.AlwaysOnTheme(darkTheme = true) {
+                ThemeGalleryBottomSheet(
+                    preferences = AodPreferences(),
+                    onSelectPreset = { appliedPreset = it },
+                    onSelectAccentColor = { appliedColor = it },
+                    onDismiss = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("gallery_category_${AodThemeCategory.NEON.id}").performClick()
+        composeTestRule.waitForIdle()
+        val presetTag = "gallery_theme_preset_${AodThemePreset.NEON_OUTLINE_GLOW.id}"
+        composeTestRule.onNodeWithTag("gallery_theme_grid").performScrollToNode(hasTestTag(presetTag))
+        composeTestRule.onNodeWithTag(presetTag).performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(AodThemePreset.NEON_OUTLINE_GLOW, appliedPreset)
+
+        val accentTag = "gallery_accent_${AodAccentColor.ROSE_GOLD.id}"
+        composeTestRule.onNodeWithTag("gallery_accent_row").performScrollToNode(hasTestTag(accentTag))
+        composeTestRule.onNodeWithTag(accentTag).performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(AodAccentColor.ROSE_GOLD, appliedColor)
     }
 
     @Test

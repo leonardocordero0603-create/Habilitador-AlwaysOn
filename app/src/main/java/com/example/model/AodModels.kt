@@ -40,16 +40,47 @@ enum class AodClockStyle(
         title = "Cápsula Dúo",
         subtitle = "Bloques contrastados OLED"
     ),
+    BOLD_SPLIT(
+        id = "bold_split",
+        title = "Bloque Dúo",
+        subtitle = "Hora grande con cápsula"
+    ),
+    OUTLINE_NEON(
+        id = "outline_neon",
+        title = "Neón Hueco",
+        subtitle = "Contorno luminoso OLED"
+    ),
+    WORD_ESSENCE(
+        id = "word_essence",
+        title = "Esencia Fina",
+        subtitle = "Contraste ligero y acento"
+    ),
     ORBIT_CHRONO(
         id = "orbit_chrono",
         title = "Orbital",
         subtitle = "Anillos de progreso en vivo",
         supportsAlignment = false
     ),
+    HORIZON_ARC(
+        id = "horizon_arc",
+        title = "Horizonte",
+        subtitle = "Arco solar del día",
+        supportsAlignment = false
+    ),
+    CYBER_HUD(
+        id = "cyber_hud",
+        title = "HUD Táctico",
+        subtitle = "Marco técnico de telemetría"
+    ),
     DOT_MATRIX(
         id = "dot_matrix",
         title = "Matriz LED",
         subtitle = "Estilo puntos retro OLED"
+    ),
+    SEGMENT_RETRO(
+        id = "segment_retro",
+        title = "LCD Retro",
+        subtitle = "Display de 7 segmentos"
     ),
     RETRO_FLIP(
         id = "retro_flip",
@@ -110,21 +141,74 @@ enum class AodAccentColor(
     val color: Color
 ) {
     PURE_WHITE("pure_white", "Blanco Puro", Color(0xFFF8FAFC)),
+    GLACIER_SILVER("glacier_silver", "Plata", Color(0xFFCBD5E1)),
     CYAN_ICE("cyan_ice", "Cian Hielo", Color(0xFF38BDF8)),
     SAPPHIRE("sapphire", "Zafiro", Color(0xFF60A5FA)),
+    ELECTRIC_INDIGO("electric_indigo", "Índigo", Color(0xFF818CF8)),
     AQUA_TEAL("aqua_teal", "Turquesa", Color(0xFF2DD4BF)),
     MINT_GREEN("emerald", "Menta", Color(0xFF34D399)),
     LIME_NEON("lime_neon", "Lima Neón", Color(0xFFA3E635)),
     AMBER_GOLD("amber_gold", "Ámbar", Color(0xFFFBBF24)),
     SOLAR_ORANGE("solar_orange", "Naranja", Color(0xFFFB923C)),
+    ROSE_GOLD("rose_gold", "Oro Rosa", Color(0xFFFDA4AF)),
     CORAL_ROSE("coral_rose", "Coral", Color(0xFFFB7185)),
     CRIMSON_RED("crimson_red", "Carmesí", Color(0xFFF87171)),
     LAVENDER("lavender", "Lavanda", Color(0xFFC4B5FD)),
+    NEON_VIOLET("neon_violet", "Violeta", Color(0xFFA78BFA)),
     AURORA_MAGENTA("aurora_magenta", "Magenta", Color(0xFFE879F9));
 
     companion object {
         fun fromId(id: String?): AodAccentColor =
             entries.firstOrNull { it.id == id } ?: CYAN_ICE
+    }
+}
+
+enum class AodBackgroundStyle(
+    val id: String,
+    val title: String,
+    val subtitle: String
+) {
+    PURE_BLACK("pure_black", "Negro Puro", "AMOLED 0% píxeles"),
+    TOP_AURORA("top_aurora", "Aurora", "Brillo superior suave"),
+    RADIAL_HALO("radial_halo", "Halo", "Aura tras el reloj"),
+    EDGE_GLOW("edge_glow", "Marco Edge", "Bordes luminosos"),
+    STARFIELD_MIST("starfield_mist", "Estelar", "Cielo OLED sutil"),
+    HORIZON_WAVE("horizon_wave", "Horizonte", "Onda inferior");
+
+    companion object {
+        fun fromId(id: String?): AodBackgroundStyle =
+            entries.firstOrNull { it.id == id } ?: PURE_BLACK
+    }
+}
+
+enum class AodDateStyle(
+    val id: String,
+    val title: String,
+    val sample: String
+) {
+    CLASSIC("classic", "Clásico", "Dom, 15 de nov"),
+    COMPACT_PILL("compact_pill", "Cápsula", "15 NOV · DOM"),
+    WEEKDAY_STACK("weekday_stack", "Editorial", "DOMINGO · 15 nov"),
+    NUMERIC_TECH("numeric_tech", "Numérico", "15 / 11 / 2026"),
+    WEEK_PROGRESS("week_progress", "Semana", "Dom 15 nov · Sem 46");
+
+    companion object {
+        fun fromId(id: String?): AodDateStyle =
+            entries.firstOrNull { it.id == id } ?: CLASSIC
+    }
+}
+
+enum class AodVerticalPosition(
+    val id: String,
+    val title: String
+) {
+    TOP("top", "Superior"),
+    CENTER("center", "Centro"),
+    LOWER("lower", "Inferior");
+
+    companion object {
+        fun fromId(id: String?): AodVerticalPosition =
+            entries.firstOrNull { it.id == id } ?: TOP
     }
 }
 
@@ -171,20 +255,39 @@ enum class AodTransitionStyle(
     }
 }
 
+enum class AodThemeCategory(
+    val id: String,
+    val label: String
+) {
+    ALL("all", "Todos"),
+    MINIMAL("minimal", "Minimal"),
+    NEON("neon", "Neón"),
+    CLASSIC("classic", "Clásico"),
+    RETRO("retro", "Retro")
+}
+
 enum class AodThemePreset(
     val id: String,
     val title: String,
     val tag: String,
+    val category: AodThemeCategory,
+    val description: String,
     val style: AodClockStyle,
     val font: AodClockFont,
     val accent: AodAccentColor,
     val alignLeft: Boolean = false,
-    val showSeconds: Boolean = false
+    val showSeconds: Boolean = false,
+    val background: AodBackgroundStyle = AodBackgroundStyle.PURE_BLACK,
+    val dateStyle: AodDateStyle = AodDateStyle.CLASSIC,
+    val verticalPosition: AodVerticalPosition = AodVerticalPosition.TOP,
+    val neonGlow: Boolean = false
 ) {
     GALAXY_S23(
         id = "galaxy_s23",
         title = "Estilo Estelar",
         tag = "Moderna",
+        category = AodThemeCategory.MINIMAL,
+        description = "Reloj vertical One UI en cian hielo sobre negro puro",
         style = AodClockStyle.STACKED_ONE_UI,
         font = AodClockFont.ONE_UI_ROUNDED,
         accent = AodAccentColor.CYAN_ICE
@@ -193,74 +296,174 @@ enum class AodThemePreset(
         id = "cyber_orbit",
         title = "Orbital Pro",
         tag = "Futurista",
+        category = AodThemeCategory.NEON,
+        description = "Anillos en vivo con halo central en turquesa",
         style = AodClockStyle.ORBIT_CHRONO,
         font = AodClockFont.CYBER_FUTURA,
         accent = AodAccentColor.AQUA_TEAL,
-        showSeconds = true
+        showSeconds = true,
+        background = AodBackgroundStyle.RADIAL_HALO,
+        verticalPosition = AodVerticalPosition.CENTER,
+        neonGlow = true
     ),
     NOTHING_LED(
         id = "nothing_led",
         title = "Matriz LED",
         tag = "Retro Dot",
+        category = AodThemeCategory.RETRO,
+        description = "Puntos LED en blanco puro y fecha técnica",
         style = AodClockStyle.DOT_MATRIX,
         font = AodClockFont.TECH_MONO,
-        accent = AodAccentColor.PURE_WHITE
+        accent = AodAccentColor.PURE_WHITE,
+        dateStyle = AodDateStyle.NUMERIC_TECH
     ),
     POSTER_EDITORIAL(
         id = "poster_editorial",
         title = "Póster Oro",
         tag = "Editorial",
+        category = AodThemeCategory.MINIMAL,
+        description = "Tipografía alta en ámbar con aurora superior",
         style = AodClockStyle.POSTER_TALL,
         font = AodClockFont.POSTER_CONDENSED,
         accent = AodAccentColor.AMBER_GOLD,
-        alignLeft = true
+        alignLeft = true,
+        background = AodBackgroundStyle.TOP_AURORA,
+        dateStyle = AodDateStyle.WEEKDAY_STACK
     ),
     LUXURY_ROMAN(
         id = "luxury_roman",
         title = "Clásico XIX",
         tag = "Lujo",
+        category = AodThemeCategory.CLASSIC,
+        description = "Esfera romana naranja sobre cielo estelar",
         style = AodClockStyle.ROMAN_CLASSIC,
         font = AodClockFont.ELEGANT_SERIF,
-        accent = AodAccentColor.SOLAR_ORANGE
+        accent = AodAccentColor.SOLAR_ORANGE,
+        background = AodBackgroundStyle.STARFIELD_MIST,
+        verticalPosition = AodVerticalPosition.CENTER
     ),
     RETRO_STUDIO(
         id = "retro_studio",
         title = "Estudio Flip",
         tag = "Clásico",
+        category = AodThemeCategory.RETRO,
+        description = "Tarjetas flip coral con cápsula compacta",
         style = AodClockStyle.RETRO_FLIP,
         font = AodClockFont.GEOMETRIC,
-        accent = AodAccentColor.CORAL_ROSE
+        accent = AodAccentColor.CORAL_ROSE,
+        dateStyle = AodDateStyle.COMPACT_PILL
     ),
     NEON_NIGHT(
         id = "neon_night",
         title = "Neón Night",
         tag = "Cyber",
+        category = AodThemeCategory.NEON,
+        description = "Barra lateral magenta y marco Edge luminoso",
         style = AodClockStyle.EDGE_NEON,
         font = AodClockFont.CYBER_FUTURA,
         accent = AodAccentColor.AURORA_MAGENTA,
         alignLeft = true,
-        showSeconds = true
+        showSeconds = true,
+        background = AodBackgroundStyle.EDGE_GLOW,
+        neonGlow = true
     ),
     DUO_MINIMAL(
         id = "duo_minimal",
         title = "Cápsula Zen",
         tag = "Minimal",
+        category = AodThemeCategory.MINIMAL,
+        description = "Bloques menta suaves con horizonte inferior",
         style = AodClockStyle.DUO_CAPSULE,
         font = AodClockFont.ONE_UI_ROUNDED,
-        accent = AodAccentColor.MINT_GREEN
+        accent = AodAccentColor.MINT_GREEN,
+        background = AodBackgroundStyle.HORIZON_WAVE,
+        dateStyle = AodDateStyle.COMPACT_PILL
+    ),
+    CYBER_HUD_PRO(
+        id = "cyber_hud_pro",
+        title = "HUD Táctico",
+        tag = "Sci-Fi",
+        category = AodThemeCategory.NEON,
+        description = "Marco táctico en lima neón con bordes Edge",
+        style = AodClockStyle.CYBER_HUD,
+        font = AodClockFont.TECH_MONO,
+        accent = AodAccentColor.LIME_NEON,
+        showSeconds = true,
+        background = AodBackgroundStyle.EDGE_GLOW,
+        dateStyle = AodDateStyle.NUMERIC_TECH,
+        neonGlow = true
+    ),
+    NEON_OUTLINE_GLOW(
+        id = "neon_outline_glow",
+        title = "Neón Hueco",
+        tag = "Glow",
+        category = AodThemeCategory.NEON,
+        description = "Contorno violeta luminoso con aura central",
+        style = AodClockStyle.OUTLINE_NEON,
+        font = AodClockFont.POSTER_CONDENSED,
+        accent = AodAccentColor.NEON_VIOLET,
+        background = AodBackgroundStyle.RADIAL_HALO,
+        dateStyle = AodDateStyle.COMPACT_PILL,
+        neonGlow = true
+    ),
+    SOLAR_HORIZON(
+        id = "solar_horizon",
+        title = "Horizonte",
+        tag = "Ambiente",
+        category = AodThemeCategory.CLASSIC,
+        description = "Arco solar en oro rosa con cielo estelar",
+        style = AodClockStyle.HORIZON_ARC,
+        font = AodClockFont.GEOMETRIC,
+        accent = AodAccentColor.ROSE_GOLD,
+        background = AodBackgroundStyle.STARFIELD_MIST,
+        dateStyle = AodDateStyle.WEEK_PROGRESS,
+        verticalPosition = AodVerticalPosition.CENTER
+    ),
+    RETRO_CASIO(
+        id = "retro_casio",
+        title = "Digital 80s",
+        tag = "7-Seg",
+        category = AodThemeCategory.RETRO,
+        description = "Display de 7 segmentos en índigo con aurora",
+        style = AodClockStyle.SEGMENT_RETRO,
+        font = AodClockFont.TECH_MONO,
+        accent = AodAccentColor.ELECTRIC_INDIGO,
+        showSeconds = true,
+        background = AodBackgroundStyle.TOP_AURORA,
+        dateStyle = AodDateStyle.NUMERIC_TECH
     );
 
     fun matches(prefs: AodPreferences): Boolean =
         prefs.clockStyle == style &&
             prefs.clockFont == font &&
             prefs.accentColor == accent &&
+            prefs.backgroundStyle == background &&
+            prefs.dateStyle == dateStyle &&
+            prefs.verticalPosition == verticalPosition &&
+            prefs.neonGlowEnabled == neonGlow &&
             (!style.supportsAlignment || prefs.alignLeft == alignLeft)
+
+    companion object {
+        fun findMatching(prefs: AodPreferences): AodThemePreset? =
+            entries.firstOrNull { it.matches(prefs) }
+
+        fun nextAfter(current: AodThemePreset?): AodThemePreset {
+            val all = entries
+            if (current == null) return all.first()
+            val idx = all.indexOf(current)
+            return all[(idx + 1) % all.size]
+        }
+    }
 }
 
 data class AodPreferences(
     val clockStyle: AodClockStyle = AodClockStyle.STACKED_ONE_UI,
     val clockFont: AodClockFont = AodClockFont.ONE_UI_ROUNDED,
     val accentColor: AodAccentColor = AodAccentColor.CYAN_ICE,
+    val backgroundStyle: AodBackgroundStyle = AodBackgroundStyle.PURE_BLACK,
+    val dateStyle: AodDateStyle = AodDateStyle.CLASSIC,
+    val verticalPosition: AodVerticalPosition = AodVerticalPosition.TOP,
+    val neonGlowEnabled: Boolean = false,
     val clockScale: Float = 1.0f,
     val alignLeft: Boolean = false,
     val brightnessLevel: Float = 0.14f,

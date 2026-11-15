@@ -24,16 +24,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FormatAlignCenter
-import androidx.compose.material.icons.filled.FormatAlignLeft
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonChecked
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SwipeVertical
+import androidx.compose.material.icons.filled.VerticalAlignBottom
+import androidx.compose.material.icons.filled.VerticalAlignCenter
+import androidx.compose.material.icons.filled.VerticalAlignTop
 import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,12 +54,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,14 +77,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.aod.AodBackgroundThumbnail
 import com.example.aod.AodStyleThumbnail
+import com.example.aod.AodThemePresetThumbnail
 import com.example.model.AodAccentColor
+import com.example.model.AodBackgroundStyle
 import com.example.model.AodClockFont
 import com.example.model.AodClockStyle
+import com.example.model.AodDateStyle
+import com.example.model.AodThemeCategory
 import com.example.model.AodThemePreset
 import com.example.model.AodTransitionStyle
+import com.example.model.AodVerticalPosition
 import com.example.ui.AodUiState
 import com.example.ui.components.PhoneMockupPreview
+import com.example.ui.components.ThemeGalleryBottomSheet
 import com.example.ui.theme.ElectricSapphire
 import com.example.ui.theme.IceCyan
 import com.example.ui.theme.OledOutline
@@ -92,6 +107,10 @@ fun StylesScreen(
     onSelectClockStyle: (AodClockStyle) -> Unit,
     onSelectClockFont: (AodClockFont) -> Unit,
     onSelectAccentColor: (AodAccentColor) -> Unit,
+    onSelectBackgroundStyle: (AodBackgroundStyle) -> Unit,
+    onSelectDateStyle: (AodDateStyle) -> Unit,
+    onSelectVerticalPosition: (AodVerticalPosition) -> Unit,
+    onToggleNeonGlow: (Boolean) -> Unit,
     onClockScaleChange: (Float) -> Unit,
     onToggleAlignLeft: (Boolean) -> Unit,
     onBrightnessChange: (Float) -> Unit,
@@ -106,12 +125,34 @@ fun StylesScreen(
     onSelectTransitionStyle: (AodTransitionStyle) -> Unit,
     onCustomLabelChange: (String) -> Unit,
     onLaunchPreviewFullscreen: () -> Unit,
+    onCycleNextTheme: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val prefs = uiState.preferences
     val status = uiState.deviceStatus
     val oneUiShape = RoundedCornerShape(24.dp)
     var transitionReplayTrigger by remember { mutableIntStateOf(0) }
+    var selectedThemeCategory by remember { mutableStateOf(AodThemeCategory.ALL) }
+    var showThemeGallerySheet by remember { mutableStateOf(false) }
+
+    val activePreset = remember(prefs) { AodThemePreset.findMatching(prefs) }
+    val filteredThemePresets = remember(selectedThemeCategory) {
+        if (selectedThemeCategory == AodThemeCategory.ALL) {
+            AodThemePreset.entries
+        } else {
+            AodThemePreset.entries.filter { it.category == selectedThemeCategory }
+        }
+    }
+
+    if (showThemeGallerySheet) {
+        ThemeGalleryBottomSheet(
+            preferences = prefs,
+            initialCategory = selectedThemeCategory,
+            onSelectPreset = onApplyThemePreset,
+            onSelectAccentColor = onSelectAccentColor,
+            onDismiss = { showThemeGallerySheet = false }
+        )
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -300,7 +341,7 @@ fun StylesScreen(
                 }
             }
 
-            // Curated 1-tap AOD Themes
+            // Curated 1-tap AOD Predefined Themes Selector
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -318,37 +359,86 @@ fun StylesScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Temas listos en 1 toque",
+                                    text = "Temas predefinidos",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Combinan reloj, tipografía y color automáticamente",
+                                    text = "Combinan reloj, fondo OLED, tipografía y color",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                            Surface(
+                                color = prefs.accentColor.color.copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(1.dp, prefs.accentColor.color.copy(alpha = 0.45f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(prefs.accentColor.color)
+                                    )
+                                    Text(
+                                        text = activePreset?.title ?: "Personalizado",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = prefs.accentColor.color,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(AodThemeCategory.entries) { category ->
+                                val catSelected = selectedThemeCategory == category
+                                FilterChip(
+                                    selected = catSelected,
+                                    onClick = { selectedThemeCategory = category },
+                                    label = { Text(category.label) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = ElectricSapphire.copy(alpha = 0.25f),
+                                        selectedLabelColor = IceCyan
+                                    ),
+                                    modifier = Modifier
+                                        .heightIn(min = 48.dp)
+                                        .testTag("theme_category_${category.id}")
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            items(AodThemePreset.entries) { preset ->
+                            items(filteredThemePresets, key = { it.id }) { preset ->
                                 val selected = preset.matches(prefs)
                                 val accentColor = preset.accent.color
                                 Card(
                                     onClick = { onApplyThemePreset(preset) },
                                     shape = RoundedCornerShape(20.dp),
                                     colors = CardDefaults.cardColors(
-                                        containerColor = if (selected) accentColor.copy(alpha = 0.10f) else OledSurfaceElevated
+                                        containerColor = if (selected) accentColor.copy(alpha = 0.12f) else OledSurfaceElevated
                                     ),
                                     border = BorderStroke(
                                         width = if (selected) 2.dp else 1.dp,
                                         color = if (selected) accentColor else OledOutline
                                     ),
                                     modifier = Modifier
-                                        .width(106.dp)
+                                        .width(116.dp)
                                         .testTag("theme_preset_${preset.id}")
                                 ) {
                                     Column(
@@ -358,15 +448,29 @@ fun StylesScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .height(66.dp)
+                                                .height(70.dp)
                                                 .clip(RoundedCornerShape(14.dp))
                                                 .border(1.dp, OledOutlineSubtle, RoundedCornerShape(14.dp))
                                         ) {
-                                            AodStyleThumbnail(
-                                                style = preset.style,
-                                                accentColor = accentColor,
-                                                fontFamily = preset.font.fontFamily
-                                            )
+                                            AodThemePresetThumbnail(preset = preset)
+                                            if (selected) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopEnd)
+                                                        .padding(5.dp)
+                                                        .size(16.dp)
+                                                        .clip(CircleShape)
+                                                        .background(accentColor),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Check,
+                                                        contentDescription = "Tema activo",
+                                                        tint = Color(0xFF06080D),
+                                                        modifier = Modifier.size(11.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                         Spacer(modifier = Modifier.height(7.dp))
                                         Text(
@@ -379,6 +483,26 @@ fun StylesScreen(
                                             textAlign = TextAlign.Center
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(7.dp)
+                                                    .clip(CircleShape)
+                                                    .background(accentColor)
+                                            )
+                                            Text(
+                                                text = preset.style.title,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 9.5.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
                                         Box(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(50))
@@ -396,6 +520,53 @@ fun StylesScreen(
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onCycleNextTheme,
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, OledOutline),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("next_theme_preset_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.SkipNext,
+                                    contentDescription = null,
+                                    tint = IceCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Siguiente tema", color = IceCyan)
+                            }
+                            TextButton(
+                                onClick = { showThemeGallerySheet = true },
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("open_theme_gallery_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.GridView,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Galería (${AodThemePreset.entries.size})",
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         }
                     }
@@ -567,6 +738,101 @@ fun StylesScreen(
                 }
             }
 
+            // OLED Ambient Background & Glow Effects Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = oneUiShape,
+                    colors = CardDefaults.cardColors(containerColor = OledSurface),
+                    border = BorderStroke(1.dp, OledOutline)
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 16.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Fondo OLED y efectos",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Iluminación ambiental de bajo consumo sobre negro puro",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "${AodBackgroundStyle.entries.size} fondos",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = IceCyan
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(AodBackgroundStyle.entries) { bg ->
+                                val selected = prefs.backgroundStyle == bg
+                                val accent = prefs.accentColor.color
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .width(90.dp)
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .clickable { onSelectBackgroundStyle(bg) }
+                                        .testTag("background_style_${bg.id}")
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 86.dp, height = 64.dp)
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .border(
+                                                width = if (selected) 2.dp else 1.dp,
+                                                color = if (selected) accent else OledOutline,
+                                                shape = RoundedCornerShape(16.dp)
+                                            )
+                                    ) {
+                                        AodBackgroundThumbnail(
+                                            backgroundStyle = bg,
+                                            accent = accent
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = bg.title,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        HorizontalDivider(color = OledOutlineSubtle)
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                            AodSettingSwitchRow(
+                                title = "Resplandor neón",
+                                subtitle = "Añade un halo luminoso suave detrás del reloj",
+                                checked = prefs.neonGlowEnabled,
+                                onCheckedChange = onToggleNeonGlow,
+                                tag = "neon_glow_switch"
+                            )
+                        }
+                    }
+                }
+            }
+
             // S23 Size & Alignment Card
             item {
                 Card(
@@ -608,7 +874,7 @@ fun StylesScreen(
                         if (supportsAlignment) {
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Posición",
+                                text = "Alineación horizontal",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -643,7 +909,7 @@ fun StylesScreen(
                                     label = { Text("Izquierda") },
                                     leadingIcon = {
                                         Icon(
-                                            imageVector = Icons.Filled.FormatAlignLeft,
+                                            imageVector = Icons.AutoMirrored.Filled.FormatAlignLeft,
                                             contentDescription = null,
                                             modifier = Modifier.size(16.dp)
                                         )
@@ -656,6 +922,53 @@ fun StylesScreen(
                                         .weight(1f)
                                         .heightIn(min = 48.dp)
                                         .testTag("align_left_chip")
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Posición vertical",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            AodVerticalPosition.entries.forEach { pos ->
+                                val selected = prefs.verticalPosition == pos
+                                val icon = when (pos) {
+                                    AodVerticalPosition.TOP -> Icons.Filled.VerticalAlignTop
+                                    AodVerticalPosition.CENTER -> Icons.Filled.VerticalAlignCenter
+                                    AodVerticalPosition.LOWER -> Icons.Filled.VerticalAlignBottom
+                                }
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onSelectVerticalPosition(pos) },
+                                    label = {
+                                        Text(
+                                            text = pos.title,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = ElectricSapphire.copy(alpha = 0.25f),
+                                        selectedLabelColor = IceCyan
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("vertical_pos_${pos.id}")
                                 )
                             }
                         }
@@ -718,6 +1031,41 @@ fun StylesScreen(
                             onCheckedChange = onToggleShowDate,
                             tag = "show_date_switch"
                         )
+                        if (prefs.showDate) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(AodDateStyle.entries) { dateStyle ->
+                                    val selected = prefs.dateStyle == dateStyle
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { onSelectDateStyle(dateStyle) },
+                                        label = {
+                                            Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                                                Text(
+                                                    text = dateStyle.title,
+                                                    style = MaterialTheme.typography.labelLarge
+                                                )
+                                                Text(
+                                                    text = dateStyle.sample,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (selected) IceCyan.copy(alpha = 0.85f)
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = ElectricSapphire.copy(alpha = 0.25f),
+                                            selectedLabelColor = IceCyan
+                                        ),
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .testTag("date_style_${dateStyle.id}")
+                                    )
+                                }
+                            }
+                        }
                         HorizontalDivider(color = OledOutlineSubtle, modifier = Modifier.padding(vertical = 8.dp))
                         AodSettingSwitchRow(
                             title = "Mostrar batería y carga",

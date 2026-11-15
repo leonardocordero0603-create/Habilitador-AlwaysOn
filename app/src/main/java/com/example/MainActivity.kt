@@ -262,7 +262,11 @@ fun AlwaysOnApp(viewModel: AodViewModel = viewModel()) {
                             onShareApp = viewModel::shareApp,
                             onDismissQrDialog = viewModel::dismissQrDialog,
                             onShareAppViaSystem = viewModel::shareAppViaSystem,
-                            onShowFeedback = viewModel::showFeedback
+                            onShowFeedback = viewModel::showFeedback,
+                            onApplyThemePreset = viewModel::applyThemePreset,
+                            onSelectAccentColor = viewModel::setAccentColor,
+                            onCycleNextTheme = viewModel::cycleNextThemePreset,
+                            onOpenStylesTab = { navigateTo(ROUTE_STYLES) }
                         )
                     }
                     composable(ROUTE_STYLES) {
@@ -272,6 +276,10 @@ fun AlwaysOnApp(viewModel: AodViewModel = viewModel()) {
                             onSelectClockStyle = viewModel::setClockStyle,
                             onSelectClockFont = viewModel::setClockFont,
                             onSelectAccentColor = viewModel::setAccentColor,
+                            onSelectBackgroundStyle = viewModel::setBackgroundStyle,
+                            onSelectDateStyle = viewModel::setDateStyle,
+                            onSelectVerticalPosition = viewModel::setVerticalPosition,
+                            onToggleNeonGlow = viewModel::setNeonGlowEnabled,
                             onClockScaleChange = viewModel::setClockScale,
                             onToggleAlignLeft = viewModel::setAlignLeft,
                             onBrightnessChange = viewModel::setBrightness,
@@ -285,7 +293,8 @@ fun AlwaysOnApp(viewModel: AodViewModel = viewModel()) {
                             onToggleShowMusicControls = viewModel::setShowMusicControls,
                             onSelectTransitionStyle = viewModel::setTransitionStyle,
                             onCustomLabelChange = viewModel::setCustomLabel,
-                            onLaunchPreviewFullscreen = viewModel::launchUniversalAod
+                            onLaunchPreviewFullscreen = viewModel::launchUniversalAod,
+                            onCycleNextTheme = viewModel::cycleNextThemePreset
                         )
                     }
                     composable(ROUTE_COMPATIBILITY) {

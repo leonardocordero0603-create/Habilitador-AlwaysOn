@@ -431,6 +431,28 @@ fun AodClockFaceContent(
                 }
             }
         }
+
+        AodClockStyle.OUTLINE_NEON,
+        AodClockStyle.BOLD_SPLIT,
+        AodClockStyle.WORD_ESSENCE,
+        AodClockStyle.HORIZON_ARC,
+        AodClockStyle.CYBER_HUD,
+        AodClockStyle.SEGMENT_RETRO -> {
+            AodExtraClockFaceContent(
+                preferences = preferences,
+                displayHour = displayHour,
+                displayMinute = displayMinute,
+                displaySecond = displaySecond,
+                hourInt = hourInt,
+                minuteInt = minuteInt,
+                amPm = amPm,
+                accent = accent,
+                clockFont = clockFont,
+                scale = scale,
+                isPreview = isPreview,
+                horizontalAlign = horizontalAlign
+            )
+        }
     }
 }
 
@@ -439,12 +461,13 @@ fun AodStyleThumbnail(
     style: AodClockStyle,
     accentColor: Color,
     fontFamily: FontFamily,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    backgroundColor: Color = Color.Black
 ) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(backgroundColor),
         contentAlignment = Alignment.Center
     ) {
         when (style) {
@@ -723,6 +746,19 @@ fun AodStyleThumbnail(
                         color = Color.White
                     )
                 }
+            }
+
+            AodClockStyle.OUTLINE_NEON,
+            AodClockStyle.BOLD_SPLIT,
+            AodClockStyle.WORD_ESSENCE,
+            AodClockStyle.HORIZON_ARC,
+            AodClockStyle.CYBER_HUD,
+            AodClockStyle.SEGMENT_RETRO -> {
+                AodExtraStyleThumbnail(
+                    style = style,
+                    accentColor = accentColor,
+                    fontFamily = fontFamily
+                )
             }
         }
     }

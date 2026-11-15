@@ -51,6 +51,8 @@ class AodScreenOffLockWaitTest {
         shadowPm = Shadows.shadowOf(pm)
 
         ShadowSettings.setCanDrawOverlays(true)
+        AODDisplayActivity.resetTestState()
+        AodScreenOffController.resetForTesting()
 
         val repo = AodPreferencesRepository(app)
         runBlocking {

@@ -73,7 +73,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.model.AodDateStyle
 import com.example.model.AodPreferences
+import com.example.model.AodVerticalPosition
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.OutfitFontFamily
 import com.example.ui.theme.PlusJakartaSansFontFamily
@@ -138,10 +140,9 @@ fun AodClockCanvas(
     val calendar = remember(currentTimeMillis) {
         Calendar.getInstance().apply { timeInMillis = currentTimeMillis }
     }
-    val localeEs = remember { Locale("es", "ES") }
-    val dateString = remember(currentTimeMillis) {
-        val sdf = SimpleDateFormat("EEE, d 'de' MMMM", localeEs)
-        sdf.format(Date(currentTimeMillis)).replaceFirstChar { it.uppercase(localeEs) }
+    val localeEs = remember { Locale.forLanguageTag("es-ES") }
+    val dateString = remember(currentTimeMillis, preferences.dateStyle) {
+        formatAodDateString(currentTimeMillis, calendar, preferences.dateStyle, localeEs)
     }
 
     val hourInt = calendar.get(Calendar.HOUR_OF_DAY)
@@ -167,19 +168,45 @@ fun AodClockCanvas(
     }
 
     val textAlign = if (horizontalAlign == Alignment.Start) TextAlign.Start else TextAlign.Center
+    val blockAlignment = when (preferences.verticalPosition) {
+        AodVerticalPosition.TOP -> Alignment.TopCenter
+        AodVerticalPosition.CENTER -> Alignment.Center
+        AodVerticalPosition.LOWER -> Alignment.BottomCenter
+    }
+    val topPadding = when (preferences.verticalPosition) {
+        AodVerticalPosition.TOP -> if (isPreview) 42.dp else 108.dp
+        AodVerticalPosition.CENTER -> 0.dp
+        AodVerticalPosition.LOWER -> 0.dp
+    }
+    val bottomPadding = when (preferences.verticalPosition) {
+        AodVerticalPosition.TOP -> 0.dp
+        AodVerticalPosition.CENTER -> if (isPreview) 36.dp else 72.dp
+        AodVerticalPosition.LOWER -> if (isPreview) 84.dp else 188.dp
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // S23 upper-middle clock + date + contact info block
+        AodAmbientBackgroundLayer(
+            backgroundStyle = preferences.backgroundStyle,
+            accent = accent,
+            neonGlow = preferences.neonGlowEnabled,
+            verticalPosition = preferences.verticalPosition,
+            isPreview = isPreview,
+            contentAlpha = contentAlpha,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Configurable One UI clock + date + contact info block
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(Alignment.TopCenter)
+                .align(blockAlignment)
                 .padding(
-                    top = if (isPreview) 46.dp else 112.dp,
+                    top = topPadding,
+                    bottom = bottomPadding,
                     start = if (isPreview) 20.dp else 32.dp,
                     end = if (isPreview) 20.dp else 32.dp
                 )
@@ -205,12 +232,13 @@ fun AodClockCanvas(
 
             if (preferences.showDate) {
                 Spacer(modifier = Modifier.height(if (isPreview) 8.dp else 14.dp))
-                Text(
-                    text = dateString,
-                    fontFamily = OutfitFontFamily,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = if (isPreview) 11.5.sp else 16.sp,
-                    color = Color.White.copy(alpha = 0.82f),
+                AodFormattedDateBadge(
+                    dateStyle = preferences.dateStyle,
+                    dateString = dateString,
+                    currentTimeMillis = currentTimeMillis,
+                    locale = localeEs,
+                    accent = accent,
+                    isPreview = isPreview,
                     textAlign = textAlign
                 )
             }
@@ -903,4 +931,122 @@ private fun formatDurationMs(ms: Long): String {
     val minutes = totalSeconds / 60L
     val seconds = totalSeconds % 60L
     return String.format(Locale.US, "%d:%02d", minutes, seconds)
+}
+
+private fun formatAodDateString(
+    millis: Long,
+    calendar: Calendar,
+    dateStyle: AodDateStyle,
+    locale: Locale
+): String {
+    val date = Date(millis)
+    return when (dateStyle) {
+        AodDateStyle.CLASSIC -> {
+            val sdf = SimpleDateFormat("EEE, d 'de' MMMM", locale)
+            sdf.format(date).replaceFirstChar { it.uppercase(locale) }
+        }
+        AodDateStyle.COMPACT_PILL -> {
+            val sdf = SimpleDateFormat("d MMM · EEE", locale)
+            sdf.format(date).uppercase(locale).replace(".", "")
+        }
+        AodDateStyle.WEEKDAY_STACK -> {
+            val sdf = SimpleDateFormat("d 'de' MMMM", locale)
+            sdf.format(date)
+        }
+        AodDateStyle.NUMERIC_TECH -> {
+            val sdf = SimpleDateFormat("dd / MM / yyyy · EEE", locale)
+            sdf.format(date).uppercase(locale).replace(".", "")
+        }
+        AodDateStyle.WEEK_PROGRESS -> {
+            val week = calendar.get(Calendar.WEEK_OF_YEAR)
+            val sdf = SimpleDateFormat("EEE d MMM", locale)
+            val base = sdf.format(date).replaceFirstChar { it.uppercase(locale) }.replace(".", "")
+            "$base · Sem $week"
+        }
+    }
+}
+
+@Composable
+private fun AodFormattedDateBadge(
+    dateStyle: AodDateStyle,
+    dateString: String,
+    currentTimeMillis: Long,
+    locale: Locale,
+    accent: Color,
+    isPreview: Boolean,
+    textAlign: TextAlign
+) {
+    when (dateStyle) {
+        AodDateStyle.COMPACT_PILL -> {
+            Surface(
+                color = accent.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(1.dp, accent.copy(alpha = 0.42f))
+            ) {
+                Text(
+                    text = dateString,
+                    fontFamily = JetBrainsMonoFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = if (isPreview) 9.sp else 12.5.sp,
+                    letterSpacing = 0.8.sp,
+                    color = Color.White.copy(alpha = 0.92f),
+                    modifier = Modifier.padding(
+                        horizontal = if (isPreview) 9.dp else 14.dp,
+                        vertical = if (isPreview) 3.dp else 5.dp
+                    )
+                )
+            }
+        }
+
+        AodDateStyle.WEEKDAY_STACK -> {
+            val weekday = remember(currentTimeMillis) {
+                SimpleDateFormat("EEEE", locale).format(Date(currentTimeMillis)).uppercase(locale)
+            }
+            Column(
+                horizontalAlignment = if (textAlign == TextAlign.Start) Alignment.Start else Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = weekday,
+                    fontFamily = PlusJakartaSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (isPreview) 9.sp else 12.5.sp,
+                    letterSpacing = 2.sp,
+                    color = accent,
+                    textAlign = textAlign
+                )
+                Text(
+                    text = dateString,
+                    fontFamily = OutfitFontFamily,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = if (isPreview) 10.5.sp else 15.sp,
+                    color = Color.White.copy(alpha = 0.84f),
+                    textAlign = textAlign
+                )
+            }
+        }
+
+        AodDateStyle.NUMERIC_TECH -> {
+            Text(
+                text = dateString,
+                fontFamily = JetBrainsMonoFontFamily,
+                fontWeight = FontWeight.Medium,
+                fontSize = if (isPreview) 10.sp else 13.5.sp,
+                letterSpacing = 0.8.sp,
+                color = Color.White.copy(alpha = 0.84f),
+                textAlign = textAlign
+            )
+        }
+
+        AodDateStyle.CLASSIC,
+        AodDateStyle.WEEK_PROGRESS -> {
+            Text(
+                text = dateString,
+                fontFamily = OutfitFontFamily,
+                fontWeight = FontWeight.Medium,
+                fontSize = if (isPreview) 11.5.sp else 16.sp,
+                color = Color.White.copy(alpha = 0.82f),
+                textAlign = textAlign
+            )
+        }
+    }
 }

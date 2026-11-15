@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatterySaver
@@ -30,10 +31,13 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DisplaySettings
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.ScreenLockPortrait
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -48,6 +52,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,11 +63,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.aod.AodLiveThemeMiniPreview
+import com.example.model.AodAccentColor
+import com.example.model.AodThemePreset
 import com.example.ui.AodUiState
 import com.example.ui.components.ActionControlCard
 import com.example.ui.components.DeviceTelemetryHeroCard
+import com.example.ui.components.ThemeGalleryBottomSheet
 import com.example.ui.theme.AmberContainer
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.ElectricSapphire
@@ -88,10 +101,25 @@ fun ActivateScreen(
     onShareApp: () -> Unit,
     onDismissQrDialog: () -> Unit,
     onShareAppViaSystem: () -> Unit,
+    onApplyThemePreset: (AodThemePreset) -> Unit = {},
+    onSelectAccentColor: (AodAccentColor) -> Unit = {},
+    onCycleNextTheme: () -> Unit = {},
+    onOpenStylesTab: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val status = uiState.deviceStatus
     val prefs = uiState.preferences
+    val activePreset = remember(prefs) { AodThemePreset.findMatching(prefs) }
+    var showThemeGallerySheet by remember { mutableStateOf(false) }
+
+    if (showThemeGallerySheet) {
+        ThemeGalleryBottomSheet(
+            preferences = prefs,
+            onSelectPreset = onApplyThemePreset,
+            onSelectAccentColor = onSelectAccentColor,
+            onDismiss = { showThemeGallerySheet = false }
+        )
+    }
 
     if (uiState.showQrDialog) {
         androidx.compose.material3.AlertDialog(
@@ -586,6 +614,125 @@ fun ActivateScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Probar pantalla AMOLED ahora", color = IceCyan)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Active AOD Theme Quick Switcher Card
+            item {
+                val accent = prefs.accentColor.color
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = OledSurface),
+                    border = BorderStroke(1.dp, OledOutline)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 78.dp, height = 78.dp)
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .border(1.5.dp, accent.copy(alpha = 0.7f), RoundedCornerShape(18.dp))
+                            ) {
+                                AodLiveThemeMiniPreview(preferences = prefs)
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = activePreset?.title ?: "Tema personalizado",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(9.dp)
+                                            .clip(CircleShape)
+                                            .background(accent)
+                                    )
+                                    Text(
+                                        text = "${prefs.clockStyle.title} · ${prefs.accentColor.label}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Fondo: ${prefs.backgroundStyle.title}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = accent
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onCycleNextTheme,
+                                border = BorderStroke(1.dp, OledOutline),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("activate_next_theme_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.SkipNext,
+                                    contentDescription = null,
+                                    tint = accent,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Siguiente", color = MaterialTheme.colorScheme.onSurface)
+                            }
+                            OutlinedButton(
+                                onClick = { showThemeGallerySheet = true },
+                                border = BorderStroke(1.dp, accent.copy(alpha = 0.55f)),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("activate_open_theme_gallery_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.GridView,
+                                    contentDescription = null,
+                                    tint = accent,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Temas", color = accent)
+                            }
+                            TextButton(
+                                onClick = onOpenStylesTab,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("activate_open_styles_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Palette,
+                                    contentDescription = "Personalizar estilos",
+                                    tint = IceCyan,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     }
